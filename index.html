@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>r.ship</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #F7F6F2;
+  --surface:  #FFFFFF;
+  --border:   #E6E4DC;
+  --text:     #1A1916;
+  --muted:    #8A8880;
+  --hint:     #C4C2BA;
+  --accent:   #2B5CE6;
+  --accent-bg:#EEF2FD;
+  --warn:     #C05020;
+  --warn-bg:  #FDF0E8;
+  --ok:       #1A6645;
+  --ok-bg:    #EDFBF4;
+  --sidebar-w:248px;
+  --r:        12px;
+}
+body { font-family:'DM Sans',sans-serif; background:var(--bg); color:var(--text); height:100vh; display:flex; overflow:hidden; font-size:14px; line-height:1.5; }
+
+/* ── Sidebar ── */
+#sidebar { width:var(--sidebar-w); min-width:var(--sidebar-w); background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+.s-logo { padding:20px 18px 14px; border-bottom:1px solid var(--border); }
+.s-logo h1 { font-family:'Instrument Serif',serif; font-size:22px; font-weight:400; color:var(--text); }
+.s-logo h1 span { color:var(--accent); }
+.s-section { padding:10px 10px 4px; }
+.s-label { font-size:10px; font-weight:600; letter-spacing:.08em; color:var(--hint); text-transform:uppercase; padding:0 8px 5px; }
+.nav-btn { display:flex; align-items:center; gap:9px; width:100%; padding:8px 10px; border-radius:8px; border:none; background:transparent; color:var(--muted); font-size:13px; font-family:inherit; cursor:pointer; text-align:left; transition:background .1s,color .1s; }
+.nav-btn:hover { background:var(--bg); color:var(--text); }
+.nav-btn.active { background:var(--accent-bg); color:var(--accent); font-weight:500; }
+.contact-scroll { flex:1; overflow-y:auto; padding:6px 10px; }
+.c-item { display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:8px; cursor:pointer; transition:background .1s; }
+.c-item:hover { background:var(--bg); }
+.c-item.active { background:var(--accent-bg); }
+.c-name { font-size:13px; font-weight:500; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.c-role { font-size:11px; color:var(--muted); }
+.s-footer { padding:10px; border-top:1px solid var(--border); }
+
+/* ── Main ── */
+#main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.topbar { padding:14px 26px; border-bottom:1px solid var(--border); background:var(--surface); display:flex; align-items:center; justify-content:space-between; gap:16px; flex-shrink:0; }
+.topbar-title { font-family:'Instrument Serif',serif; font-size:20px; font-weight:400; }
+.content { flex:1; overflow-y:auto; padding:26px; }
+
+/* ── Views ── */
+.view { display:none; }
+.view.active { display:block; }
+
+/* ── Cards & surfaces ── */
+.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:14px 16px; }
+.card+.card { margin-top:8px; }
+
+/* ── Avatar ── */
+.av { border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:600; color:#fff; flex-shrink:0; }
+
+/* ── Badges ── */
+.badge { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:500; white-space:nowrap; }
+.badge-accent { background:var(--accent-bg); color:var(--accent); }
+.badge-warn   { background:var(--warn-bg);   color:var(--warn);   }
+.badge-ok     { background:var(--ok-bg);     color:var(--ok);     }
+
+/* ── Theme chip ── */
+.theme-chip { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:500; cursor:default; border:none; }
+.theme-chip .rm { cursor:pointer; opacity:.6; margin-left:2px; font-size:12px; line-height:1; background:none; border:none; color:inherit; padding:0; }
+.theme-chip .rm:hover { opacity:1; }
+
+/* ── Inputs ── */
+input[type=text], input[type=number], select, textarea {
+  width:100%; padding:9px 12px; border:1px solid var(--border); border-radius:8px;
+  font-size:14px; font-family:inherit; color:var(--text); background:var(--bg);
+  outline:none; transition:border-color .15s;
+}
+input:focus, select:focus, textarea:focus { border-color:var(--accent); }
+textarea { min-height:80px; resize:none; line-height:1.55; }
+textarea::placeholder, input::placeholder { color:var(--hint); }
+
+/* ── Buttons ── */
+.btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text); font-size:13px; font-family:inherit; cursor:pointer; transition:background .1s; white-space:nowrap; }
+.btn:hover { background:var(--bg); }
+.btn-primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+.btn-primary:hover { background:#1d4cc8; }
+.btn-sm { padding:5px 10px; font-size:12px; }
+.btn-warn { color:var(--warn); border-color:var(--warn-bg); background:var(--warn-bg); }
+.btn-ok   { color:var(--ok);   border-color:var(--ok-bg);   background:var(--ok-bg);   }
+.btn:disabled { opacity:.4; cursor:not-allowed; }
+.btn-recording { color:var(--warn); border-color:var(--warn); background:var(--warn-bg); }
+
+/* ── Log entry ── */
+.log-entry { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:14px 16px; margin-bottom:8px; position:relative; }
+.log-entry:hover .log-del { opacity:1; }
+.log-del { position:absolute; top:10px; right:10px; background:none; border:none; color:var(--hint); cursor:pointer; font-size:16px; padding:2px 5px; border-radius:4px; opacity:0; transition:opacity .1s; }
+.log-date { font-size:11px; color:var(--hint); margin-bottom:6px; }
+.log-text { font-size:14px; line-height:1.6; margin-bottom:10px; }
+.log-pills { display:flex; flex-wrap:wrap; gap:6px; }
+
+/* ── Add log panel ── */
+.add-panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:14px 16px; margin-bottom:20px; }
+.add-panel-actions { display:flex; gap:8px; margin-top:10px; align-items:center; flex-wrap:wrap; }
+
+/* ── Stat row ── */
+.stat-row { display:flex; gap:8px; margin-bottom:20px; }
+.stat-pill { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px; text-align:center; }
+.stat-pill .sv { font-size:17px; font-weight:600; }
+.stat-pill .sl { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-top:2px; }
+
+/* ── Section label ── */
+.sl-hdr { font-size:10px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--hint); margin-bottom:10px; margin-top:22px; }
+.sl-hdr:first-child { margin-top:0; }
+
+/* ── Search ── */
+.search-wrap { position:relative; margin-bottom:14px; }
+.search-wrap input { padding-left:36px; }
+.search-icon { position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--hint); pointer-events:none; font-size:15px; }
+.r-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:14px 16px; margin-bottom:8px; cursor:pointer; transition:box-shadow .1s; }
+.r-card:hover { box-shadow:0 2px 8px rgba(0,0,0,.06); }
+mark { background:#FFF3CD; border-radius:2px; padding:0 1px; }
+
+/* ── Theme grid ── */
+.theme-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; margin-bottom:20px; }
+.theme-card { border-radius:var(--r); padding:16px; cursor:pointer; transition:transform .12s,box-shadow .12s; border:1px solid transparent; position:relative; overflow:hidden; }
+.theme-card:hover { transform:translateY(-2px); box-shadow:0 4px 14px rgba(0,0,0,.1); }
+.theme-card .tc-name { font-size:15px; font-weight:600; margin-bottom:4px; }
+.theme-card .tc-count { font-size:12px; opacity:.75; }
+
+/* ── Modal ── */
+.modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:1000; }
+.modal-backdrop.open { display:flex; }
+.modal { background:var(--surface); border-radius:16px; padding:22px; width:420px; max-width:90vw; box-shadow:0 8px 40px rgba(0,0,0,.15); }
+.modal h2 { font-size:17px; font-weight:600; margin-bottom:16px; }
+.f-row { margin-bottom:12px; }
+.f-label { font-size:12px; color:var(--muted); margin-bottom:5px; font-weight:500; }
+.modal-footer { display:flex; gap:8px; margin-top:18px; justify-content:flex-end; }
+
+/* ── Alert preview ── */
+.alert-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:14px 16px; margin-bottom:8px; display:flex; gap:12px; }
+.alert-icon { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; }
+
+/* ── Feed ── */
+.feed-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:12px 14px; margin-bottom:8px; display:flex; gap:10px; cursor:pointer; }
+.feed-card:hover { box-shadow:0 2px 8px rgba(0,0,0,.05); }
+
+/* ── Toast ── */
+#toast { position:fixed; bottom:22px; right:22px; background:#1A1916; color:#fff; padding:9px 15px; border-radius:8px; font-size:13px; z-index:9999; opacity:0; transform:translateY(8px); transition:opacity .2s,transform .2s; pointer-events:none; }
+#toast.show { opacity:1; transform:translateY(0); }
+
+/* ── Contact header ── */
+.ch { display:flex; align-items:center; gap:14px; margin-bottom:20px; }
+.ch-name { font-family:'Instrument Serif',serif; font-size:26px; font-weight:400; }
+.ch-role { font-size:13px; color:var(--muted); }
+
+/* ── Empty ── */
+.empty { text-align:center; padding:44px 20px; color:var(--hint); font-size:14px; line-height:1.7; }
+
+/* ── Recorder indicator ── */
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+.rec-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--warn); animation:pulse 1s infinite; }
+
+::-webkit-scrollbar { width:4px; }
+::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
+</style>
+</head>
+<body>
+
+<!-- ── SIDEBAR ─────────────────────────────────────────────────────────── -->
+<div id="sidebar">
+  <div class="s-logo">
+    <h1>r<span>.</span>ship</h1>
+  </div>
+
+  <div class="s-section">
+    <div class="s-label">Views</div>
+    <button class="nav-btn active" data-view="today" onclick="nav('today','Today')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12L12 3L21 12V21H15V15H9V21H3V12Z"/></svg>
+      Today
+    </button>
+    <button class="nav-btn" data-view="themes" onclick="nav('themes','Themes')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><line x1="7" y1="7" x2="10" y2="10"/><line x1="17" y1="7" x2="14" y2="10"/><line x1="7" y1="17" x2="10" y2="14"/><line x1="17" y1="17" x2="14" y2="14"/></svg>
+      Themes
+    </button>
+    <button class="nav-btn" data-view="search" onclick="nav('search','Search')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20L16.5 16.5"/></svg>
+      Search
+    </button>
+  </div>
+
+  <div class="s-section" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;flex:1;overflow:hidden;display:flex;flex-direction:column">
+    <div class="s-label">People</div>
+    <div class="contact-scroll" id="sidebarPeople"></div>
+  </div>
+
+  <div class="s-footer">
+    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="openAddModal()">+ Add person</button>
+  </div>
+</div>
+
+<!-- ── MAIN ───────────────────────────────────────────────────────────── -->
+<div id="main">
+  <div class="topbar">
+    <div class="topbar-title" id="topTitle">Today</div>
+    <div id="topActions"></div>
+  </div>
+  <div class="content">
+
+    <!-- TODAY -->
+    <div id="view-today" class="view active">
+      <div id="feedList"></div>
+    </div>
+
+    <!-- THEMES -->
+    <div id="view-themes" class="view">
+      <div id="themesContent"></div>
+    </div>
+
+    <!-- SEARCH -->
+    <div id="view-search" class="view">
+      <div class="search-wrap">
+        <span class="search-icon">⌕</span>
+        <input type="text" id="searchInput" placeholder='Try "ISB alum who vibed with me in Goa" or "who should I call" or "Amazon referral"' onkeydown="if(event.key==='Enter')doSearch()">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:18px">
+        <button class="btn btn-primary btn-sm" onclick="doSearch()">Search</button>
+        <div id="intentBadge"></div>
+      </div>
+      <div id="searchResults"></div>
+    </div>
+
+    <!-- CONTACT -->
+    <div id="view-contact" class="view">
+      <div id="contactContent"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── ADD CONTACT MODAL ───────────────────────────────────────────────── -->
+<div class="modal-backdrop" id="addModal">
+  <div class="modal">
+    <h2>Add person</h2>
+    <div class="f-row">
+      <div class="f-label">Name *</div>
+      <input type="text" id="nc_name" placeholder="Rahul Sharma / LinkedIn Outreach / Met at Goa Concert">
+    </div>
+    <div class="f-row">
+      <div class="f-label">Role / context</div>
+      <input type="text" id="nc_role" placeholder="College friend, VC at Sequoia, ISB alum…">
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('addModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitAdd()">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── ADD THEME MODAL ─────────────────────────────────────────────────── -->
+<div class="modal-backdrop" id="themeModal">
+  <div class="modal">
+    <h2>Add theme to log</h2>
+    <div class="f-row">
+      <div class="f-label">Theme name</div>
+      <input type="text" id="tm_input" placeholder="Referrals, Career moves, Romantic…">
+    </div>
+    <div id="tm_existing" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('themeModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitTheme()">Add theme</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── ALERTS MODAL ────────────────────────────────────────────────────── -->
+<div class="modal-backdrop" id="alertModal">
+  <div class="modal" style="width:560px">
+    <h2>Proactive Alerts</h2>
+    <div id="alertContent" style="max-height:400px;overflow-y:auto"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('alertModal')">Close</button>
+      <button class="btn btn-primary" id="downloadIcalBtn" onclick="downloadIcal()" style="display:none">Download .ics for Apple Calendar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = '';
+let contacts = [];
+let allThemes = [];
+let currentContactId = null;
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+let activeThemeLogId = null;
+
+// ── Utils ──────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const toast = (msg, ms=2500) => { const t=$('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),ms); };
+const initials = name => name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+const relTime = iso => { if(!iso) return 'Never'; const d=Math.floor((Date.now()-new Date(iso))/86400000); return d===0?'Today':d===1?'Yesterday':d<7?`${d}d ago`:d<30?`${Math.floor(d/7)}w ago`:`${Math.floor(d/30)}mo ago`; };
+const fmtDate = iso => new Date(iso).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+const av = (c,sz=36) => `<div class="av" style="width:${sz}px;height:${sz}px;background:${c.color||'#5B7FE8'};font-size:${Math.round(sz*.33)}px">${initials(c.name)}</div>`;
+
+async function api(path, opts={}) {
+  const r = await fetch(API+path, { headers:{'Content-Type':'application/json'}, ...opts });
+  if(!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  if(r.status===204) return null;
+  return r.json();
+}
+
+// ── Nav ────────────────────────────────────────────────────────────────
+function nav(view, title) {
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.nav-btn[data-view]').forEach(b=>b.classList.remove('active'));
+  $(`view-${view}`).classList.add('active');
+  const btn = document.querySelector(`.nav-btn[data-view="${view}"]`);
+  if(btn) btn.classList.add('active');
+  $('topTitle').textContent = title;
+  $('topActions').innerHTML = '';
+  document.querySelectorAll('.c-item').forEach(el=>el.classList.remove('active'));
+  if(view==='today')  loadFeed();
+  if(view==='themes') loadThemes();
+}
+
+// ── Sidebar ────────────────────────────────────────────────────────────
+async function loadSidebar() {
+  contacts = await api('/api/contacts');
+  allThemes = await api('/api/themes');
+  const el = $('sidebarPeople');
+  if(!contacts.length) { el.innerHTML='<p style="font-size:12px;color:var(--hint);padding:6px 8px">No people yet</p>'; return; }
+  el.innerHTML = contacts.map(c => `
+    <div class="c-item" id="si-${c.id}" onclick="openContact('${c.id}')">
+      ${av(c,28)}
+      <div style="flex:1;min-width:0">
+        <div class="c-name">${c.name}</div>
+        ${c.role?`<div class="c-role">${c.role}</div>`:''}
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── TODAY / FEED ───────────────────────────────────────────────────────
+async function loadFeed() {
+  $('feedList').innerHTML = '<p style="color:var(--hint);font-size:13px">Loading…</p>';
+  $('topActions').innerHTML = `<button class="btn btn-sm" onclick="openAlerts()">✦ Scan for alerts</button>`;
+  try {
+    const logs = await api('/api/feed');
+    if(!logs.length) { $('feedList').innerHTML='<div class="empty">No logs yet.<br>Add your first person and start logging.</div>'; return; }
+    $('feedList').innerHTML = `
+      <p class="sl-hdr">Recent activity</p>
+      ${logs.map(l => `
+        <div class="feed-card" onclick="openContact('${l.contact_id}')">
+          <div class="av" style="width:36px;height:36px;background:${l.contact_color||'#5B7FE8'};font-size:12px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;color:#fff;flex-shrink:0">${initials(l.contact_name)}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:3px">
+              <span style="font-size:13px;font-weight:600">${l.contact_name}</span>
+              <span style="font-size:11px;color:var(--hint)">${relTime(l.created_at)}</span>
+            </div>
+            <p style="font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:${l.themes?.length?'6px':'0'}">${l.text}</p>
+            ${l.themes?.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px">${l.themes.map(t=>themeChip(t,false)).join('')}</div>` : ''}
+          </div>
+        </div>
+      `).join('')}
+    `;
+  } catch(e) { $('feedList').innerHTML=`<p style="color:var(--warn)">Error: ${e.message}</p>`; }
+}
+
+// ── THEMES ─────────────────────────────────────────────────────────────
+async function loadThemes() {
+  $('themesContent').innerHTML = '<p style="color:var(--hint);font-size:13px">Loading…</p>';
+  allThemes = await api('/api/themes');
+  if(!allThemes.length) {
+    $('themesContent').innerHTML = '<div class="empty">No themes yet.<br>They are created automatically when you add logs.</div>';
+    return;
+  }
+  renderThemeGrid();
+}
+
+function hexToRgb(hex) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  return `${r},${g},${b}`;
+}
+
+function renderThemeGrid() {
+  $('themesContent').innerHTML = `
+    <p class="sl-hdr">All themes</p>
+    <div class="theme-grid">
+      ${allThemes.map(t => `
+        <div class="theme-card" style="background:${t.color}18;border-color:${t.color}40" onclick="openTheme('${t.id}')">
+          <div style="width:10px;height:10px;border-radius:50%;background:${t.color};margin-bottom:8px"></div>
+          <div class="tc-name" style="color:${t.color}">${t.name}</div>
+          <div class="tc-count" style="color:${t.color}">${t.contact_count} ${t.contact_count===1?'person':'people'}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+async function openTheme(tid) {
+  const data = await api(`/api/themes/${tid}/contacts`);
+  const t = data.theme;
+  $('topTitle').textContent = t.name;
+  $('topActions').innerHTML = `<button class="btn btn-sm" onclick="loadThemes();$('topTitle').textContent='Themes'">‹ All themes</button>`;
+  $('themesContent').innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+      <div style="width:14px;height:14px;border-radius:50%;background:${t.color}"></div>
+      <span style="font-size:18px;font-weight:600;color:${t.color}">${t.name}</span>
+      <span class="badge" style="background:${t.color}18;color:${t.color}">${data.contacts.length} people</span>
+    </div>
+    ${!data.contacts.length ? '<div class="empty">No contacts in this theme yet.</div>' : ''}
+    ${data.contacts.map(c => `
+      <div class="card" style="margin-bottom:8px;cursor:pointer;display:flex;gap:12px" onclick="openContact('${c.id}')">
+        ${av(c,40)}
+        <div style="flex:1;min-width:0">
+          <p style="font-size:14px;font-weight:600;margin-bottom:3px">${c.name}</p>
+          ${c.role?`<p style="font-size:12px;color:var(--muted);margin-bottom:6px">${c.role}</p>`:''}
+          ${c.theme_log_summary?`<span class="badge badge-accent">✦ ${c.theme_log_summary}</span>`:
+            c.theme_log_text?`<p style="font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.theme_log_text}</p>`:''}
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
+// ── CONTACT DETAIL ─────────────────────────────────────────────────────
+async function openContact(cid) {
+  currentContactId = cid;
+  document.querySelectorAll('.c-item').forEach(el=>el.classList.remove('active'));
+  const si = $(`si-${cid}`); if(si) si.classList.add('active');
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  $('view-contact').classList.add('active');
+  document.querySelectorAll('.nav-btn[data-view]').forEach(b=>b.classList.remove('active'));
+  $('contactContent').innerHTML = '<p style="color:var(--hint);font-size:13px">Loading…</p>';
+
+  const data = await api(`/api/contacts/${cid}`);
+  const c = data.contact;
+  $('topTitle').textContent = c.name;
+  $('topActions').innerHTML = `<button class="btn btn-sm" onclick="delContact('${c.id}')">Delete</button>`;
+
+  $('contactContent').innerHTML = `
+    <div class="ch">
+      ${av(c,52)}
+      <div>
+        <div class="ch-name">${c.name}</div>
+        ${c.role?`<div class="ch-role">${c.role}</div>`:''}
+      </div>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat-pill"><div class="sv">${relTime(c.last_log_at)}</div><div class="sl">Last log</div></div>
+      <div class="stat-pill"><div class="sv">${data.logs.length}</div><div class="sl">Logs</div></div>
+      <div class="stat-pill"><div class="sv">${c.themes?.length||0}</div><div class="sl">Themes</div></div>
+    </div>
+
+    ${c.themes?.length ? `
+      <div style="margin-bottom:18px">
+        <p class="sl-hdr" style="margin-top:0">Themes</p>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${c.themes.map(t=>`<span class="theme-chip" style="background:${t.color}18;color:${t.color};border:1px solid ${t.color}30" onclick="openThemeFromContact('${t.id}')">${t.name}</span>`).join('')}
+        </div>
+      </div>` : ''}
+
+    <!-- Add log -->
+    <div class="add-panel" id="addPanel">
+      <textarea id="logTxt" placeholder="What's going on with ${c.name.split(' ')[0]}? (type or use mic)"></textarea>
+      <div class="add-panel-actions">
+        <button class="btn btn-sm" id="micBtn" onclick="toggleMic()">
+          🎤 Voice
+        </button>
+        <span id="micStatus" style="font-size:12px;color:var(--muted)"></span>
+        <button class="btn btn-sm btn-primary" id="saveBtn" onclick="saveLog('${cid}')" disabled style="margin-left:auto">Save log</button>
+      </div>
+    </div>
+
+    <p class="sl-hdr">${data.logs.length} ${data.logs.length===1?'log':'logs'}</p>
+    <div id="logList">
+      ${!data.logs.length?'<div class="empty">No logs yet. Add the first one above.</div>':''}
+      ${data.logs.map(l=>renderLog(l)).join('')}
+    </div>
+  `;
+
+  $('logTxt').addEventListener('input', () => { $('saveBtn').disabled = !$('logTxt').value.trim(); });
+}
+
+function renderLog(l) {
+  const chips = (l.themes||[]).map(t => themeChip(t, true, l.id)).join('');
+  return `
+    <div class="log-entry" id="log-${l.id}">
+      <button class="log-del" onclick="delLog('${l.id}','${l.contact_id}')">×</button>
+      <div class="log-date">${fmtDate(l.created_at)}</div>
+      <div class="log-text">${l.text}</div>
+      <div class="log-pills">
+        ${l.ai_summary?`<span class="badge badge-accent">✦ ${l.ai_summary}</span>`:''}
+        ${l.follow_up_prompt?`<span class="badge badge-warn">↩ ${l.follow_up_days}d: ${l.follow_up_prompt}</span>`:''}
+        ${chips}
+        <button class="badge" style="background:var(--bg);color:var(--muted);border:1px dashed var(--border);cursor:pointer" onclick="openThemeModal('${l.id}')">+ theme</button>
+      </div>
+    </div>
+  `;
+}
+
+function themeChip(t, removable=false, logId='') {
+  return `<span class="theme-chip" style="background:${t.color}18;color:${t.color};border:1px solid ${t.color}30">
+    ${t.name}${removable?`<button class="rm" onclick="removeTheme('${logId}','${t.name}')">×</button>`:''}
+  </span>`;
+}
+
+// ── VOICE (Whisper STT) ────────────────────────────────────────────────
+// NOTE: Currently using OpenAI Whisper API. Will migrate to WisprFlow API
+// when it becomes available — only _transcribeAudio() will change.
+async function toggleMic() { isRecording ? stopMic() : startMic(); }
+
+async function startMic() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    mediaRecorder.ondataavailable = e => { if(e.data.size>0) audioChunks.push(e.data); };
+    mediaRecorder.start(250);
+    isRecording = true;
+    updateMicUI();
+  } catch(e) { toast('Mic access denied'); }
+}
+
+async function stopMic() {
+  if(!mediaRecorder) return;
+  mediaRecorder.stop();
+  mediaRecorder.stream.getTracks().forEach(t=>t.stop());
+  isRecording = false;
+  updateMicUI(true);
+  // small wait for final chunk
+  await new Promise(r=>setTimeout(r,300));
+  const blob = new Blob(audioChunks, { type:'audio/webm' });
+  if(blob.size < 1000) { toast('Recording too short'); updateMicUI(false); return; }
+  $('micStatus').textContent = 'Transcribing…';
+  try {
+    const fd = new FormData();
+    fd.append('audio', blob, 'recording.webm');
+    const r = await fetch('/api/transcribe', { method:'POST', body:fd });
+    const data = await r.json();
+    $('logTxt').value = data.transcript;
+    $('saveBtn').disabled = false;
+    $('micStatus').textContent = '';
+  } catch(e) { toast('Transcription failed'); $('micStatus').textContent = ''; }
+}
+
+function updateMicUI(processing=false) {
+  const btn = $('micBtn'); if(!btn) return;
+  if(processing) { btn.textContent = '…'; btn.disabled=true; return; }
+  btn.disabled = false;
+  if(isRecording) {
+    btn.className = 'btn btn-sm btn-recording';
+    btn.innerHTML = '<span class="rec-dot"></span> Stop';
+    $('micStatus').textContent = 'Recording…';
+  } else {
+    btn.className = 'btn btn-sm';
+    btn.innerHTML = '🎤 Voice';
+    $('micStatus').textContent = '';
+  }
+}
+
+// ── LOGS ───────────────────────────────────────────────────────────────
+async function saveLog(cid) {
+  const text = $('logTxt').value.trim(); if(!text) return;
+  const btn = $('saveBtn'); btn.disabled=true; btn.textContent='Saving…';
+  if(isRecording) await stopMic();
+  try {
+    const resp = await api(`/api/contacts/${cid}/logs`, { method:'POST', body:JSON.stringify({text}) });
+    $('logTxt').value='';
+    btn.textContent='Save log';
+    const list = $('logList');
+    const empty = list.querySelector('.empty'); if(empty) empty.remove();
+    list.insertAdjacentHTML('afterbegin', renderLog(resp.log));
+    toast('Log saved ✓');
+    loadSidebar();
+  } catch(e) { toast('Error saving log'); btn.disabled=false; btn.textContent='Save log'; }
+}
+
+async function delLog(lid, cid) {
+  if(!confirm('Delete this log?')) return;
+  await api(`/api/logs/${lid}`, { method:'DELETE' });
+  const el = $(`log-${lid}`); if(el) el.remove();
+  toast('Deleted');
+}
+
+// ── THEMES ON LOGS ─────────────────────────────────────────────────────
+function openThemeModal(logId) {
+  activeThemeLogId = logId;
+  $('tm_input').value = '';
+  $('tm_existing').innerHTML = allThemes.map(t =>
+    `<span class="theme-chip" style="background:${t.color}18;color:${t.color};border:1px solid ${t.color}30;cursor:pointer" onclick="$('tm_input').value='${t.name}'">${t.name}</span>`
+  ).join('');
+  $('themeModal').classList.add('open');
+  setTimeout(()=>$('tm_input').focus(), 50);
+}
+
+async function submitTheme() {
+  const name = $('tm_input').value.trim(); if(!name || !activeThemeLogId) return;
+  try {
+    const resp = await api(`/api/logs/${activeThemeLogId}/themes`, { method:'PATCH', body:JSON.stringify({add:[name],remove:[]}) });
+    closeModal('themeModal');
+    const logEl = $(`log-${activeThemeLogId}`);
+    if(logEl) {
+      const pills = logEl.querySelector('.log-pills');
+      const addBtn = pills.querySelector('[onclick*="openThemeModal"]');
+      const chip = document.createElement('span');
+      const newTheme = resp.themes.find(t=>t.name.toLowerCase()===name.toLowerCase());
+      if(newTheme && addBtn) {
+        chip.className='theme-chip';
+        chip.style.cssText=`background:${newTheme.color}18;color:${newTheme.color};border:1px solid ${newTheme.color}30`;
+        chip.innerHTML=`${newTheme.name}<button class="rm" onclick="removeTheme('${activeThemeLogId}','${newTheme.name}')">×</button>`;
+        pills.insertBefore(chip, addBtn);
+      }
+    }
+    loadSidebar();
+    toast('Theme added');
+  } catch(e) { toast('Error adding theme'); }
+}
+
+async function removeTheme(logId, themeName) {
+  await api(`/api/logs/${logId}/themes`, { method:'PATCH', body:JSON.stringify({add:[],remove:[themeName]}) });
+  openContact(currentContactId);
+}
+
+function openThemeFromContact(tid) {
+  nav('themes','Themes');
+  setTimeout(()=>openTheme(tid), 100);
+}
+
+// ── ALERTS ─────────────────────────────────────────────────────────────
+async function openAlerts() {
+  $('alertContent').innerHTML = '<p style="color:var(--hint);font-size:13px;padding:8px 0">Scanning your contacts for time-sensitive signals…</p>';
+  $('downloadIcalBtn').style.display = 'none';
+  $('alertModal').classList.add('open');
+  try {
+    const data = await api('/api/alerts/preview');
+    const { triggers, scanned } = data;
+    if(!triggers.length) {
+      $('alertContent').innerHTML = `
+        <div style="background:var(--ok-bg);border:1px solid #C0E8D4;border-radius:10px;padding:14px 16px">
+          <p style="color:var(--ok);margin:0">No time-sensitive signals found across ${scanned} contacts.</p>
+        </div>`;
+      return;
+    }
+    const icons = { explicit_date:'📅', implicit_urgency:'⚡', opportunity:'🤝', emotional:'💛' };
+    $('alertContent').innerHTML = `
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Found ${triggers.length} alert${triggers.length===1?'':'s'} across ${scanned} contacts.</p>
+      ${triggers.map(t => `
+        <div class="alert-card">
+          <div class="alert-icon" style="background:var(--accent-bg)">${icons[t.type]||'🔔'}</div>
+          <div style="flex:1">
+            <p style="font-size:14px;font-weight:600;margin-bottom:3px">${t.event_title}</p>
+            <p style="font-size:12px;color:var(--muted);margin-bottom:4px">${t.alert_date} at ${t.alert_time}</p>
+            <p style="font-size:12px;color:var(--hint);font-style:italic">"${t.log_snippet||''}"</p>
+          </div>
+        </div>
+      `).join('')}
+    `;
+    $('downloadIcalBtn').style.display = 'inline-flex';
+  } catch(e) { $('alertContent').innerHTML = `<p style="color:var(--warn)">Error: ${e.message}</p>`; }
+}
+
+async function downloadIcal() {
+  const btn = $('downloadIcalBtn'); btn.disabled=true; btn.textContent='Generating…';
+  try {
+    const r = await fetch('/api/alerts/scan', { method:'POST' });
+    if(r.headers.get('content-type')?.includes('calendar')) {
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download='rship_alerts.ics'; a.click();
+      URL.revokeObjectURL(url);
+      toast('Calendar file downloaded — open to import into Apple Calendar');
+      closeModal('alertModal');
+    } else {
+      const data = await r.json();
+      toast(data.message || 'No alerts to download');
+    }
+  } catch(e) { toast('Error generating calendar file'); }
+  btn.disabled=false; btn.textContent='Download .ics for Apple Calendar';
+}
+
+// ── SEARCH ─────────────────────────────────────────────────────────────
+async function doSearch() {
+  const q = $('searchInput').value.trim(); if(!q) return;
+  $('searchResults').innerHTML = '<p style="color:var(--hint);font-size:13px">Thinking…</p>';
+  $('intentBadge').innerHTML = '';
+  try {
+    const data = await api('/api/search', { method:'POST', body:JSON.stringify({query:q}) });
+    const { results, intent } = data;
+    if(intent?.intent) $('intentBadge').innerHTML = `<span class="badge badge-accent">✦ ${intent.intent}</span>`;
+    if(!results.length) { $('searchResults').innerHTML=`<div class="empty">No results for "${q}"</div>`; return; }
+
+    $('searchResults').innerHTML = results.map(r => {
+      const c = r.contact; const log = r.matched_log;
+      const words = q.split(/\s+/).filter(w=>w.length>2);
+      let snippet = log ? log.text.slice(0,200)+(log.text.length>200?'…':'') : '';
+      words.forEach(w => { snippet = snippet.replace(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'), m=>`<mark>${m}</mark>`); });
+      return `
+        <div class="r-card" onclick="openContact('${c.id}')">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            ${av(c,36)}
+            <div style="flex:1">
+              <span style="font-size:14px;font-weight:600">${c.name}</span>
+              ${c.role?`<span style="font-size:12px;color:var(--muted);margin-left:6px">${c.role}</span>`:''}
+            </div>
+            <span style="font-size:11px;color:var(--hint)">${Math.round(r.score*100)}% match</span>
+          </div>
+          ${snippet?`<p style="font-size:13px;color:var(--muted);line-height:1.5">${snippet}</p>`:''}
+          ${log?.ai_summary?`<div style="margin-top:6px"><span class="badge badge-accent">✦ ${log.ai_summary}</span></div>`:''}
+        </div>
+      `;
+    }).join('');
+  } catch(e) { $('searchResults').innerHTML=`<p style="color:var(--warn)">Error: ${e.message}</p>`; }
+}
+
+// ── ADD CONTACT ────────────────────────────────────────────────────────
+function openAddModal() { $('nc_name').value=''; $('nc_role').value=''; $('addModal').classList.add('open'); setTimeout(()=>$('nc_name').focus(),50); }
+function closeModal(id) { $(id).classList.remove('open'); }
+async function submitAdd() {
+  const name=$('nc_name').value.trim(); if(!name){ toast('Name required'); return; }
+  await api('/api/contacts',{method:'POST',body:JSON.stringify({name,role:$('nc_role').value.trim()||null})});
+  closeModal('addModal');
+  toast(`${name} added`);
+  await loadSidebar();
+}
+
+// ── CONTACT DELETE ─────────────────────────────────────────────────────
+async function delContact(cid) {
+  if(!confirm('Delete this person and all their logs?')) return;
+  await api(`/api/contacts/${cid}`,{method:'DELETE'});
+  toast('Deleted'); loadSidebar(); nav('today','Today');
+}
+
+// ── KEYBOARD ───────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if(e.key==='Escape') { document.querySelectorAll('.modal-backdrop.open').forEach(m=>m.classList.remove('open')); }
+  if(e.key==='/' && !['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) {
+    e.preventDefault(); nav('search','Search'); setTimeout(()=>$('searchInput').focus(),50);
+  }
+});
+
+// ── BOOT ───────────────────────────────────────────────────────────────
+(async()=>{ await loadSidebar(); loadFeed(); })();
+</script>
+</body>
+</html>

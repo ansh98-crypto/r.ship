@@ -1,31 +1,42 @@
 """
 r.ship v2 — Relationship Logbook
 STT: OpenAI Whisper (swap to WisprFlow when available — change _transcribe() only)
-AI:  Claude Haiku for log enhancement, theme suggestion, alert scan, search intent
-EMB: sentence-transformers/all-MiniLM-L6-v2 (local, no cost)
-CAL: icalendar — generates .ics for Apple Calendar
+AI:  Claude Haiku (primary) or OpenAI GPT (fallback) — auto-selected at startup
+EMB: OpenAI text-embedding-3-small (replaces sentence-transformers; no local GPU needed)
+CAL: icalendar — generates .ics for Apple Calendar (UTC-correct, IST-aware)
 """
 
 import os, json, sqlite3, uuid, tempfile, re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from contextlib import contextmanager
+from urllib.parse import urlsplit
 
 import anthropic
 import openai as _openai
 import numpy as np
+import pytz
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sentence_transformers import SentenceTransformer
 from icalendar import Calendar, Event, Alarm
-
+from dateutil import parser as dtparse
+from dotenv import load_dotenv
+load_dotenv()
 # ── Config ─────────────────────────────────────────────────────────────────
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 OPENAI_KEY    = os.environ.get("OPENAI_API_KEY", "")
 DB_PATH       = "rship.db"
-HAIKU         = "claude-haiku-4-5-20251001"
+TZ_LOCAL      = pytz.timezone(os.environ.get("TZ", "Asia/Kolkata"))
+
+# Claude model IDs
+HAIKU   = "claude-haiku-4-5-20251001"
+SONNET  = "claude-sonnet-4-5"          # upgrade path
+
+# OpenAI model IDs (used when Claude key is absent)
+OAI_CHAT  = os.environ.get("OAI_MODEL", "gpt-4o-mini")
+OAI_EMBED = "text-embedding-3-small"
 
 AVATAR_COLORS = ["#5B7FE8","#E8734A","#52B788","#B06AB3",
                  "#F4A261","#2EC4B6","#E8487A","#7B68EE"]
@@ -44,11 +55,33 @@ DATE_SIGNAL = re.compile(
     re.IGNORECASE
 )
 
-# ── Init ───────────────────────────────────────────────────────────────────
-print("Loading embedding model…")
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
-claude   = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
-oai      = _openai.OpenAI(api_key=OPENAI_KEY)
+# ── AI Backend Selection ────────────────────────────────────────────────────
+# Prefer Claude if key is set; fall back to OpenAI.
+# Embeddings always use OpenAI (text-embedding-3-small) — no local model needed.
+
+_forced = os.environ.get("LLM_BACKEND", "").lower()
+USE_CLAUDE = (_forced == "claude") or (not _forced and bool(ANTHROPIC_KEY))
+USE_OPENAI = bool(OPENAI_KEY)
+
+if not USE_CLAUDE and not USE_OPENAI:
+    raise RuntimeError(
+        "No AI backend configured. Set ANTHROPIC_API_KEY (for Claude) "
+        "and/or OPENAI_API_KEY (for OpenAI chat + embeddings)."
+    )
+
+if not USE_OPENAI:
+    raise RuntimeError(
+        "OPENAI_API_KEY is required for embeddings (text-embedding-3-small). "
+        "Chat can still run on Claude alone, but embeddings need OpenAI."
+    )
+
+_backend = "Claude (Haiku)" if USE_CLAUDE else f"OpenAI ({OAI_CHAT})"
+print(f"AI backend : {_backend}")
+print(f"Embeddings : OpenAI {OAI_EMBED}")
+
+# ── Init clients ───────────────────────────────────────────────────────────
+claude_client = anthropic.Anthropic(api_key=ANTHROPIC_KEY) if USE_CLAUDE else None
+oai           = _openai.OpenAI(api_key=OPENAI_KEY)
 
 app = FastAPI(title="r.ship")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -109,7 +142,13 @@ def r2d(row) -> dict:
     return dict(row) if row else {}
 
 def embed(text: str) -> list:
-    return embedder.encode(text, normalize_embeddings=True).tolist()
+    """OpenAI text-embedding-3-small — returns a normalised float list."""
+    r = oai.embeddings.create(input=text, model=OAI_EMBED)
+    vec = r.data[0].embedding
+    # Normalise so cosine similarity == dot product (same as before)
+    arr = np.array(vec, dtype=np.float32)
+    norm = np.linalg.norm(arr)
+    return (arr / norm if norm > 0 else arr).tolist()
 
 def cosine(a, b) -> float:
     return float(np.dot(np.array(a), np.array(b)))
@@ -144,19 +183,31 @@ def enrich_log(conn, log_row) -> dict:
     d["themes"] = log_themes_for(conn, d["id"])
     return d
 
-# ── AI Calls ───────────────────────────────────────────────────────────────
+# ── AI Dispatch ────────────────────────────────────────────────────────────
+def _ai_call(prompt: str, max_tokens: int = 400) -> str:
+    """
+    Route a plain-text prompt to whichever LLM backend is configured.
+    Claude is preferred; OpenAI is the fallback.
+    """
+    if USE_CLAUDE:
+        r = claude_client.messages.create(
+            model=HAIKU, max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return r.content[0].text.strip()
 
-def _haiku(prompt: str, max_tokens=400) -> str:
-    r = claude.messages.create(
-        model=HAIKU, max_tokens=max_tokens,
-        messages=[{"role":"user","content": prompt}]
+    # OpenAI fallback
+    r = oai.chat.completions.create(
+        model=OAI_CHAT, max_tokens=max_tokens, temperature=0,
+        messages=[{"role": "user", "content": prompt}]
     )
-    return r.content[0].text.strip()
+    return r.choices[0].message.content.strip()
 
+# ── AI Calls ───────────────────────────────────────────────────────────────
 def ai_enhance_log(text: str, contact_name: str) -> dict:
-    """Single Haiku call: key fact + follow-up + theme suggestions."""
+    """Single AI call: key fact + follow-up + theme suggestions."""
     try:
-        raw = _haiku(f"""You are a personal relationship assistant. Analyse this log entry.
+        raw = _ai_call(f"""You are a personal relationship assistant. Analyse this log entry.
 
 Contact: {contact_name}
 Log: "{text}"
@@ -173,15 +224,15 @@ Theme guidelines: pick 1-3 short labels like "Referrals", "Career moves", "Roman
 "Meetups", "College friends", "Health", "Travel", "Business", "Family". Only suggest
 themes clearly implied by the log content.""")
         return json.loads(raw)
-    except:
-        return {"summary":None,"follow_up_days":None,"follow_up_prompt":None,"suggested_themes":[]}
+    except Exception:
+        return {"summary": None, "follow_up_days": None, "follow_up_prompt": None, "suggested_themes": []}
 
 
 def ai_scan_for_alerts(contact_name: str, logs: list[str]) -> list[dict]:
-    """Haiku analyses last 5 logs and returns calendar trigger events."""
+    """AI analyses last 5 logs and returns calendar trigger events."""
     logs_text = "\n".join(f"- {l}" for l in logs)
     try:
-        raw = _haiku(f"""You are a relationship assistant helping someone stay thoughtful about people they care about.
+        raw = _ai_call(f"""You are a relationship assistant helping someone stay thoughtful about people they care about.
 
 Contact: {contact_name}
 Their last few log entries:
@@ -212,14 +263,14 @@ Reply ONLY with valid JSON (no markdown fences):
 
 If no time-sensitive signals found, return {{"triggers": []}}""", max_tokens=600)
         return json.loads(raw).get("triggers", [])
-    except:
+    except Exception:
         return []
 
 
 def ai_parse_intent(query: str) -> dict:
-    """Haiku parses search query for semantic enrichment."""
+    """AI parses search query for semantic enrichment."""
     try:
-        raw = _haiku(f"""Parse this search query for a personal relationship logbook app.
+        raw = _ai_call(f"""Parse this search query for a personal relationship logbook app.
 
 Query: "{query}"
 
@@ -232,13 +283,12 @@ Reply ONLY with valid JSON (no markdown fences):
   "topic_hint": "key topic/context if clear, else null"
 }}""")
         return json.loads(raw)
-    except:
-        return {"intent":query,"enriched_query":query,"is_nudge_request":False,"name_hint":None,"topic_hint":None}
+    except Exception:
+        return {"intent": query, "enriched_query": query, "is_nudge_request": False, "name_hint": None, "topic_hint": None}
 
 
 # ── STT (Whisper) ──────────────────────────────────────────────────────────
-# NOTE: Using OpenAI Whisper API. Will swap to WisprFlow API when available.
-# To migrate: replace _transcribe() body only — endpoint signature stays the same.
+# NOTE: Using OpenAI Whisper API. Swap _transcribe() body only when WisprFlow is available.
 
 def _transcribe(audio_bytes: bytes, mime: str = "audio/webm") -> str:
     suffix = ".webm" if "webm" in mime else ".mp3"
@@ -247,14 +297,43 @@ def _transcribe(audio_bytes: bytes, mime: str = "audio/webm") -> str:
         f.flush()
         with open(f.name, "rb") as af:
             result = oai.audio.transcriptions.create(
-                model="whisper-1",
-                file=af,
-                language="en"
+                model="whisper-1", file=af, language="en"
             )
     return result.text
 
 
 # ── iCal ──────────────────────────────────────────────────────────────────
+# Improved iCal building, mirroring the UTC-correct approach in tools_core.py:
+#   - All datetimes stored/emitted as UTC
+#   - Alert_time string interpreted in local TZ (TZ_LOCAL) before converting to UTC
+#   - Alarm uses timedelta trigger (not string) — compatible with Apple Calendar
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(microsecond=0)
+
+def _to_utc(iso: str) -> datetime:
+    """
+    Parse an ISO datetime string. If timezone-naive, assume TZ_LOCAL (default Asia/Kolkata).
+    Returns a UTC datetime with microseconds stripped.
+    """
+    dt = dtparse.isoparse(iso)
+    if dt.tzinfo is None:
+        dt = TZ_LOCAL.localize(dt)
+    return dt.astimezone(timezone.utc).replace(microsecond=0)
+
+def _build_trigger_datetime(alert_date: str, alert_time: str) -> datetime:
+    """
+    Combine YYYY-MM-DD date + HH:MM time, interpret in TZ_LOCAL, return UTC datetime.
+    Falls back to 09:00 local if alert_time is missing or malformed.
+    """
+    time_str = alert_time if alert_time else "09:00"
+    try:
+        iso = f"{alert_date}T{time_str}:00"
+        return _to_utc(iso)
+    except Exception:
+        # Last-resort: midnight UTC on that date
+        return _to_utc(f"{alert_date}T00:00:00")
+
 def build_ical(all_triggers: list[dict]) -> bytes:
     cal = Calendar()
     cal.add("prodid", "-//r.ship//relationship-logbook//EN")
@@ -264,21 +343,43 @@ def build_ical(all_triggers: list[dict]) -> bytes:
 
     for t in all_triggers:
         try:
-            dt_str  = t["alert_date"] + "T" + t.get("alert_time", "09:00") + ":00"
-            dt_start = datetime.fromisoformat(dt_str)
+            dt_start = _build_trigger_datetime(
+                t["alert_date"],
+                t.get("alert_time", "09:00"),
+            )
+            dt_end = dt_start + timedelta(minutes=15)
+
+            description_parts = []
+            if t.get("log_snippet"):
+                description_parts.append(t["log_snippet"])
+            if t.get("type"):
+                description_parts.append(f"Type: {t['type']}")
+            if t.get("description"):
+                description_parts.append(f"Signal: {t['description']}")
+            if t.get("contact_name"):
+                description_parts.append(f"Contact: {t['contact_name']}")
+            description = "\n\n".join(description_parts)
+
             event = Event()
+            event["uid"] = f"{uuid.uuid4()}@r.ship"
             event.add("summary", t["event_title"])
             event.add("dtstart", dt_start)
-            event.add("dtend",   dt_start + timedelta(minutes=15))
-            event.add("description", t.get("log_snippet", "") + f"\n\nType: {t.get('type','')}")
+            event.add("dtend", dt_end)
+            event.add("dtstamp", _utcnow())
+            if description:
+                event.add("description", description)
+
+            # 30-minute pre-alert — uses timedelta (Apple Calendar / RFC 5545 compatible)
             alarm = Alarm()
             alarm.add("action", "DISPLAY")
             alarm.add("description", t["event_title"])
             alarm.add("trigger", timedelta(minutes=-30))
             event.add_component(alarm)
+
             cal.add_component(event)
+
         except Exception as e:
-            print(f"iCal event error: {e}")
+            print(f"iCal event error for '{t.get('event_title', '?')}': {e}")
 
     return cal.to_ical()
 
@@ -413,7 +514,6 @@ def theme_contacts(tid: str):
             "WHERE lt.theme_id=? ORDER BY c.name", (tid,)
         )]
         for contact in contacts:
-            # Latest log tagged with this theme for context
             latest = c.execute(
                 "SELECT l.text, l.ai_summary FROM logs l "
                 "JOIN log_themes lt ON lt.log_id=l.id "
@@ -421,12 +521,12 @@ def theme_contacts(tid: str):
                 "ORDER BY l.created_at DESC LIMIT 1",
                 (contact["id"], tid)
             ).fetchone()
-            contact["theme_log_text"]    = latest["text"]    if latest else None
+            contact["theme_log_text"]    = latest["text"]       if latest else None
             contact["theme_log_summary"] = latest["ai_summary"] if latest else None
         return {"theme": r2d(theme), "contacts": contacts}
 
 
-# ── Routes: Transcribe (Whisper → WisprFlow later) ─────────────────────────
+# ── Routes: Transcribe ─────────────────────────────────────────────────────
 @app.post("/api/transcribe")
 async def transcribe(audio: UploadFile = File(...)):
     audio_bytes = await audio.read()
@@ -448,7 +548,6 @@ def scan_alerts():
             )]
             if not logs: continue
 
-            # Pre-filter: skip contacts with no time-sensitive signals
             combined = " ".join(l["text"] for l in logs)
             if not DATE_SIGNAL.search(combined):
                 continue
@@ -502,7 +601,7 @@ def preview_alerts():
 # ── Routes: Search ─────────────────────────────────────────────────────────
 @app.post("/api/search")
 def search(data: SearchQ):
-    if not data.query.strip(): return {"results":[], "intent":None}
+    if not data.query.strip(): return {"results": [], "intent": None}
 
     intent = ai_parse_intent(data.query)
     q_emb  = embed(intent.get("enriched_query", data.query))
@@ -564,3 +663,15 @@ def feed():
         for log in logs:
             log["themes"] = log_themes_for(c, log["id"])
         return logs
+
+
+# ── Routes: Config (debug) ─────────────────────────────────────────────────
+@app.get("/api/config")
+def config_info():
+    """Returns active backend info — useful for debugging deployments."""
+    return {
+        "llm_backend":       "claude" if USE_CLAUDE else "openai",
+        "llm_model":         HAIKU if USE_CLAUDE else OAI_CHAT,
+        "embedding_model":   OAI_EMBED,
+        "local_timezone":    str(TZ_LOCAL),
+    }
