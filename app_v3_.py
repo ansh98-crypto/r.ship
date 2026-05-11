@@ -17,6 +17,8 @@ from dateutil import parser as dtparse
 from dotenv import load_dotenv
 
 load_dotenv()
+print("OPENAI:", bool(OPENAI_KEY))
+print("ANTHROPIC:", bool(ANTHROPIC_KEY))
 
 # ── Config ─────────────────────────────────────────────────────────────────
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -970,4 +972,4 @@ def feed():
 # ── Entrypoint ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
