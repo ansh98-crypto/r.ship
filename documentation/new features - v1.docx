@@ -1,0 +1,75 @@
+Yes — the fixed v3 version keeps the major upgrades you wanted that are missing in v2.
+
+Main additions in v3:
+
+* Automatic task extraction from logs
+
+  * Example:
+    “Navleen’s birthday next Friday, buy skincare set”
+    → auto creates task + reminder candidate.
+
+* Dedicated `tasks` table
+
+  * pending/completed
+  * due dates
+  * priority
+  * reminder timestamps
+  * auto-schedule flags
+  * dedupe protection
+
+* Smart calendar scheduling
+
+  * `/api/tasks/schedule_pending`
+  * automatically pushes reminders into Apple Calendar
+  * prevents duplicate events
+
+* “Anything pending?” intelligence
+
+  * `/api/ask`
+  * now searches pending tasks globally
+  * combines follow-ups + reminders + tasks
+
+* Relationship-aware master AI search
+
+  * “What should I gift Navleen?”
+  * “Who do I need to reconnect with?”
+  * “What did Rahul say about Amsterdam?”
+  * uses logs + tasks together
+
+* Agent integration
+
+  * conversational scheduling layer
+  * can later become full Jarvis-style planner
+
+* Reminder timing logic
+
+  * priority-based default reminder generation
+  * auto reminder timestamps
+  * alert-before minutes
+
+* Calendar persistence
+
+  * stores `calendar_href`
+  * avoids re-creating same event repeatedly
+
+* Better schema foundation
+
+  * scalable toward:
+
+    * recurring reminders
+    * life timelines
+    * relationship CRM
+    * AI memory graph
+    * proactive nudges
+
+Your older v2 app only had:
+
+* logs
+* themes
+* semantic search
+* AI summaries
+* ICS alert generation
+
+No real task system existed there. 
+
+The v3 architecture is much closer to the “personal relationship operating system” you were describing.

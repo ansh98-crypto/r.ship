@@ -922,11 +922,90 @@ def clear_agent_session(session_id: str):
         AGENT_SESSIONS.pop(session_id, None)
 
 # ── Routes: Search ─────────────────────────────────────────────────────────
+def _is_master_answer_query(question: str, intent: dict | None = None) -> bool:
+    """Questions that need a synthesized answer, not only ranked contact retrieval."""
+    q = (question or "").strip().lower()
+    if not q:
+        return False
+    return bool(re.search(
+        r"\b(gift|suggest|suggestion|recommend|recommendation|what should|what to|ideas?|pending|due|task|tasks|to[- ]?do|follow up|remind|anything left|who should i|summary|summarise|summarize|advice)\b",
+        q,
+        re.I,
+    )) or bool((intent or {}).get("is_nudge_request"))
+
+
+def _find_contacts_for_question(conn, question: str, intent: dict | None = None) -> list[dict]:
+    """Find mentioned contacts using both AI name_hint and literal contact-name matching."""
+    q = (question or "").lower()
+    contacts = [r2d(r) for r in conn.execute("SELECT * FROM contacts ORDER BY name")]
+    hits, seen = [], set()
+
+    name_hint = ((intent or {}).get("name_hint") or "").strip().lower()
+    for ct in contacts:
+        name = (ct.get("name") or "").lower()
+        if not name:
+            continue
+        parts = [p for p in re.split(r"\s+", name) if len(p) >= 3]
+        literal_hit = name in q or any(p in q for p in parts)
+        hint_hit = bool(name_hint and (name_hint in name or name in name_hint))
+        if literal_hit or hint_hit:
+            if ct["id"] not in seen:
+                hits.append(ct)
+                seen.add(ct["id"])
+    return hits
+
+
+def _load_master_context(conn, contacts: list[dict], generic_tasks: bool = False) -> tuple[list, list, list]:
+    """Return logs, tasks, names for master-answer mode."""
+    context_logs, context_tasks, names = [], [], []
+    for contact in contacts:
+        names.append(contact["name"])
+        context_logs.extend([r2d(r) for r in conn.execute(
+            "SELECT l.text, l.ai_summary, l.follow_up_prompt, l.created_at, "
+            "c.name as contact_name FROM logs l "
+            "JOIN contacts c ON c.id=l.contact_id "
+            "WHERE l.contact_id=? ORDER BY l.created_at DESC",
+            (contact["id"],),
+        )])
+        context_tasks.extend([r2d(r) for r in conn.execute(
+            "SELECT t.*, c.name as contact_name FROM tasks t "
+            "LEFT JOIN contacts c ON c.id=t.contact_id WHERE t.contact_id=? "
+            "ORDER BY t.status ASC, t.due_date ASC NULLS LAST",
+            (contact["id"],),
+        )])
+
+    if generic_tasks or not contacts:
+        context_tasks = [r2d(r) for r in conn.execute(
+            "SELECT t.*, c.name as contact_name FROM tasks t "
+            "LEFT JOIN contacts c ON c.id=t.contact_id "
+            "WHERE t.status='pending' ORDER BY t.due_date ASC NULLS LAST LIMIT 50"
+        )]
+        context_logs = [r2d(r) for r in conn.execute(
+            "SELECT l.text, l.follow_up_prompt, l.follow_up_days, l.created_at, "
+            "c.name as contact_name FROM logs l "
+            "JOIN contacts c ON c.id=l.contact_id "
+            "WHERE l.follow_up_prompt IS NOT NULL "
+            "ORDER BY l.created_at DESC LIMIT 30"
+        )]
+    return context_logs, context_tasks, names
+
+
 @app.post("/api/search")
 def search(data: SearchQ):
-    if not data.query.strip(): return {"results": [], "intent": None}
-    intent = ai_parse_intent(data.query)
-    q_emb  = embed(intent.get("enriched_query", data.query))
+    """
+    Master search:
+    - For lookup queries, returns ranked contacts as before.
+    - For recommendation / pending / advice questions, ALSO returns a synthesized answer.
+      Frontend should display `answer` above `results` when present.
+    """
+    question = data.query.strip()
+    if not question:
+        return {"mode": "empty", "answer": None, "results": [], "intent": None}
+
+    intent = ai_parse_intent(question)
+    q_emb  = embed(intent.get("enriched_query", question))
+    answer = None
+    answer_contacts = []
 
     with db() as c:
         contacts = [r2d(r) for r in c.execute("SELECT * FROM contacts")]
@@ -934,31 +1013,69 @@ def search(data: SearchQ):
             "SELECT id,contact_id,text,embedding,ai_summary,created_at FROM logs ORDER BY created_at DESC"
         )]
 
+        mentioned_contacts = _find_contacts_for_question(c, question, intent)
+        is_task_query = bool(re.search(r"\b(pending|due|task|tasks|to[- ]?do|follow up|remind|anything left)\b", question, re.I))
+        is_answer_query = _is_master_answer_query(question, intent)
+
+        if is_answer_query:
+            logs_ctx, tasks_ctx, answer_contacts = _load_master_context(
+                c,
+                mentioned_contacts,
+                generic_tasks=(is_task_query and not mentioned_contacts),
+            )
+            answer = ai_master_ask(question, logs_ctx, tasks_ctx, answer_contacts)
+
     logs_by = {}
     for log in all_logs:
         cid = log["contact_id"]
-        if len(logs_by.get(cid, [])) < 5:
+        if len(logs_by.get(cid, [])) < 8:
             logs_by.setdefault(cid, []).append(log)
 
+    mentioned_ids = {ct["id"] for ct in mentioned_contacts} if 'mentioned_contacts' in locals() else set()
     results = []
     for ct in contacts:
         best_score, best_log = 0.0, None
         for log in logs_by.get(ct["id"], []):
-            if not log.get("embedding"): continue
-            score = cosine(q_emb, json.loads(log["embedding"]))
-            if score > best_score: best_score, best_log = score, log
+            if not log.get("embedding"):
+                continue
+            try:
+                score = cosine(q_emb, json.loads(log["embedding"]))
+            except Exception:
+                continue
+            if score > best_score:
+                best_score, best_log = score, log
 
         name_hint = intent.get("name_hint") or ""
-        if name_hint and name_hint.lower() in ct["name"].lower(): best_score += 0.2
+        if name_hint and name_hint.lower() in ct["name"].lower():
+            best_score += 0.2
+        if ct["id"] in mentioned_ids:
+            best_score += 0.35
         if intent.get("is_nudge_request") and ct.get("last_log_at"):
             best_score += min(0.25, (days_ago(ct["last_log_at"]) or 0) * 0.008)
 
-        if best_score > 0.12:
+        # In answer mode with a specific person, avoid showing random low-quality matches.
+        threshold = 0.10 if answer else 0.12
+        if answer and mentioned_ids and ct["id"] not in mentioned_ids and best_score < 0.45:
+            continue
+
+        if best_score > threshold:
             results.append({"contact": ct, "score": round(best_score, 3),
                             "matched_log": best_log, "intent": intent})
 
     results.sort(key=lambda x: x["score"], reverse=True)
-    return {"results": results[:8], "intent": intent}
+    return {
+        "mode": "answer" if answer else "search",
+        "answer": answer,
+        "answer_contacts": answer_contacts,
+        "results": results[:8],
+        "intent": intent,
+    }
+
+
+@app.post("/api/master_search")
+def master_search(data: SearchQ):
+    """Explicit alias for the frontend if you want to separate Q&A from normal search later."""
+    return search(data)
 
 # ── Routes: Feed ───────────────────────────────────────────────────────────
 @app.get("/api/feed")
