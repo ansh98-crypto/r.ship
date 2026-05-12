@@ -546,24 +546,49 @@ def delete_contact(cid: str):
 def add_log(cid: str, data: LogCreate):
     with db() as c:
         contact = c.execute("SELECT * FROM contacts WHERE id=?", (cid,)).fetchone()
-        if not contact: raise HTTPException(404)
+        if not contact:
+            raise HTTPException(404)
 
-        ai  = ai_enhance_log(data.text, contact["name"])
+        ai = ai_enhance_log(data.text, contact["name"])
         emb = embed(data.text)
         lid = str(uuid.uuid4())
         now = datetime.now().isoformat()
 
-        c.execute("INSERT INTO logs VALUES (?,?,?,?,?,?,?,?)",
-                  (lid, cid, data.text.strip(), json.dumps(emb),
-                   ai.get("summary"), ai.get("follow_up_days"),
-                   ai.get("follow_up_prompt"), now))
+        # Fix null follow_up_days
+        follow_days = ai.get("follow_up_days")
+        if follow_days is None and ai.get("follow_up_prompt"):
+            txt = data.text.lower()
+            if any(x in txt for x in ["today", "tonight", "in 20 mins", "in 20 minutes", "in 1 hour", "tomorrow"]):
+                follow_days = 1
+            elif any(x in txt for x in ["next week", "upcoming", "soon"]):
+                follow_days = 3
+            else:
+                follow_days = 2
+
+        c.execute(
+            "INSERT INTO logs VALUES (?,?,?,?,?,?,?,?)",
+            (
+                lid,
+                cid,
+                data.text.strip(),
+                json.dumps(emb),
+                ai.get("summary"),
+                follow_days,
+                ai.get("follow_up_prompt"),
+                now,
+            ),
+        )
+
         attach_themes(c, lid, ai.get("suggested_themes", []))
         c.execute("UPDATE contacts SET last_log_at=? WHERE id=?", (now, cid))
 
-        # Auto-extract tasks from this log
         saved_tasks = []
+
+        # Auto-extract tasks from AI tasks
         for task_data in ai.get("tasks", []):
-            if not task_data.get("text"): continue
+            if not task_data.get("text"):
+                continue
+
             tid = str(uuid.uuid4())
             text = task_data["text"].strip()
             due_date = task_data.get("due_date")
@@ -571,21 +596,74 @@ def add_log(cid: str, data: LogCreate):
             remind_at = task_data.get("remind_at") or _default_remind_at(due_date, priority)
             auto_schedule = _coerce_bool(task_data.get("auto_schedule"))
             dedupe = _dedupe_key(cid, lid, text, due_date)
-            c.execute("""
+
+            c.execute(
+                """
                 INSERT OR IGNORE INTO tasks
                 (id, contact_id, source_log_id, text, due_date, remind_at, status,
                  category, priority, auto_schedule, alert_minutes_before,
                  calendar_href, scheduled_at, dedupe_key, created_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (tid, cid, lid, text, due_date, remind_at, "pending",
-                  task_data.get("category","other"), priority, auto_schedule,
-                  _safe_int(task_data.get("alert_minutes_before"), 30),
-                  None, None, dedupe, now))
+                """,
+                (
+                    tid,
+                    cid,
+                    lid,
+                    text,
+                    due_date,
+                    remind_at,
+                    "pending",
+                    task_data.get("category", "other"),
+                    priority,
+                    auto_schedule,
+                    _safe_int(task_data.get("alert_minutes_before"), 30),
+                    None,
+                    None,
+                    dedupe,
+                    now,
+                ),
+            )
             saved_tasks.append(task_data)
+
+        # Auto-create follow-up task when AI gives a follow-up prompt
+        if ai.get("follow_up_prompt") and follow_days is not None:
+            due_date = (datetime.now() + timedelta(days=max(int(follow_days), 0))).date().isoformat()
+            text = ai.get("follow_up_prompt").strip()
+            priority = 2 if int(follow_days) <= 1 else 3
+            remind_at = _default_remind_at(due_date, priority)
+            dedupe = _dedupe_key(cid, lid, text, due_date)
+
+            c.execute(
+                """
+                INSERT OR IGNORE INTO tasks
+                (id, contact_id, source_log_id, text, due_date, remind_at, status,
+                 category, priority, auto_schedule, alert_minutes_before,
+                 calendar_href, scheduled_at, dedupe_key, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    cid,
+                    lid,
+                    text,
+                    due_date,
+                    remind_at,
+                    "pending",
+                    "follow_up",
+                    priority,
+                    1,
+                    30,
+                    None,
+                    None,
+                    dedupe,
+                    now,
+                ),
+            )
+            saved_tasks.append({"text": text, "category": "follow_up"})
 
         log = enrich_log(c, c.execute("SELECT * FROM logs WHERE id=?", (lid,)).fetchone())
         return {"log": log, "ai": ai, "tasks_created": len(saved_tasks)}
-
+    
 @app.delete("/api/logs/{lid}", status_code=204)
 def delete_log(lid: str):
     with db() as c:
@@ -723,19 +801,63 @@ def preview_alerts():
     with db() as c:
         contacts = [r2d(r) for r in c.execute("SELECT * FROM contacts")]
         all_triggers = []
+
+        # 1. Add pending task reminders first
+        pending_tasks = [r2d(r) for r in c.execute("""
+            SELECT t.*, c.name as contact_name
+            FROM tasks t
+            LEFT JOIN contacts c ON c.id=t.contact_id
+            WHERE t.status='pending'
+              AND (t.remind_at IS NOT NULL OR t.due_date IS NOT NULL)
+            ORDER BY COALESCE(t.remind_at, t.due_date) ASC
+            LIMIT 50
+        """)]
+
+        for task in pending_tasks:
+            alert_date = None
+            alert_time = "09:00"
+
+            if task.get("remind_at"):
+                try:
+                    dt = dtparse.isoparse(task["remind_at"])
+                    alert_date = dt.date().isoformat()
+                    alert_time = dt.strftime("%H:%M")
+                except Exception:
+                    pass
+
+            if not alert_date and task.get("due_date"):
+                alert_date = task["due_date"]
+
+            if alert_date:
+                all_triggers.append({
+                    "type": "task",
+                    "description": task.get("text", ""),
+                    "alert_date": alert_date,
+                    "alert_time": alert_time,
+                    "event_title": f"{task.get('contact_name') or 'r.ship'} — {task.get('text', '')[:50]}",
+                    "log_snippet": task.get("text", ""),
+                    "contact_name": task.get("contact_name"),
+                    "task_id": task.get("id"),
+                })
+
+        # 2. Keep old AI relationship alert scan
         for contact in contacts:
             logs = [r2d(r) for r in c.execute(
                 "SELECT text FROM logs WHERE contact_id=? ORDER BY created_at DESC LIMIT 5",
                 (contact["id"],)
             )]
-            if not logs: continue
-            if not DATE_SIGNAL.search(" ".join(l["text"] for l in logs)): continue
+            if not logs:
+                continue
+
+            if not DATE_SIGNAL.search(" ".join(l["text"] for l in logs)):
+                continue
+
             triggers = ai_scan_alerts(contact["name"], [l["text"] for l in logs])
             for t in triggers:
                 t["contact_name"] = contact["name"]
             all_triggers.extend(triggers)
-    return {"triggers": all_triggers, "scanned": len(contacts)}
 
+    return {"triggers": all_triggers, "scanned": len(contacts)}
 @app.post("/api/alerts/schedule")
 def schedule_alerts():
     """

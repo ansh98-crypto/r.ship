@@ -546,24 +546,49 @@ def delete_contact(cid: str):
 def add_log(cid: str, data: LogCreate):
     with db() as c:
         contact = c.execute("SELECT * FROM contacts WHERE id=?", (cid,)).fetchone()
-        if not contact: raise HTTPException(404)
+        if not contact:
+            raise HTTPException(404)
 
-        ai  = ai_enhance_log(data.text, contact["name"])
+        ai = ai_enhance_log(data.text, contact["name"])
         emb = embed(data.text)
         lid = str(uuid.uuid4())
         now = datetime.now().isoformat()
 
-        c.execute("INSERT INTO logs VALUES (?,?,?,?,?,?,?,?)",
-                  (lid, cid, data.text.strip(), json.dumps(emb),
-                   ai.get("summary"), ai.get("follow_up_days"),
-                   ai.get("follow_up_prompt"), now))
+        # Fix null follow_up_days
+        follow_days = ai.get("follow_up_days")
+        if follow_days is None and ai.get("follow_up_prompt"):
+            txt = data.text.lower()
+            if any(x in txt for x in ["today", "tonight", "in 20 mins", "in 20 minutes", "in 1 hour", "tomorrow"]):
+                follow_days = 1
+            elif any(x in txt for x in ["next week", "upcoming", "soon"]):
+                follow_days = 3
+            else:
+                follow_days = 2
+
+        c.execute(
+            "INSERT INTO logs VALUES (?,?,?,?,?,?,?,?)",
+            (
+                lid,
+                cid,
+                data.text.strip(),
+                json.dumps(emb),
+                ai.get("summary"),
+                follow_days,
+                ai.get("follow_up_prompt"),
+                now,
+            ),
+        )
+
         attach_themes(c, lid, ai.get("suggested_themes", []))
         c.execute("UPDATE contacts SET last_log_at=? WHERE id=?", (now, cid))
 
-        # Auto-extract tasks from this log
         saved_tasks = []
+
+        # Auto-extract tasks from AI tasks
         for task_data in ai.get("tasks", []):
-            if not task_data.get("text"): continue
+            if not task_data.get("text"):
+                continue
+
             tid = str(uuid.uuid4())
             text = task_data["text"].strip()
             due_date = task_data.get("due_date")
@@ -571,21 +596,74 @@ def add_log(cid: str, data: LogCreate):
             remind_at = task_data.get("remind_at") or _default_remind_at(due_date, priority)
             auto_schedule = _coerce_bool(task_data.get("auto_schedule"))
             dedupe = _dedupe_key(cid, lid, text, due_date)
-            c.execute("""
+
+            c.execute(
+                """
                 INSERT OR IGNORE INTO tasks
                 (id, contact_id, source_log_id, text, due_date, remind_at, status,
                  category, priority, auto_schedule, alert_minutes_before,
                  calendar_href, scheduled_at, dedupe_key, created_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (tid, cid, lid, text, due_date, remind_at, "pending",
-                  task_data.get("category","other"), priority, auto_schedule,
-                  _safe_int(task_data.get("alert_minutes_before"), 30),
-                  None, None, dedupe, now))
+                """,
+                (
+                    tid,
+                    cid,
+                    lid,
+                    text,
+                    due_date,
+                    remind_at,
+                    "pending",
+                    task_data.get("category", "other"),
+                    priority,
+                    auto_schedule,
+                    _safe_int(task_data.get("alert_minutes_before"), 30),
+                    None,
+                    None,
+                    dedupe,
+                    now,
+                ),
+            )
             saved_tasks.append(task_data)
+
+        # Auto-create follow-up task when AI gives a follow-up prompt
+        if ai.get("follow_up_prompt") and follow_days is not None:
+            due_date = (datetime.now() + timedelta(days=max(int(follow_days), 0))).date().isoformat()
+            text = ai.get("follow_up_prompt").strip()
+            priority = 2 if int(follow_days) <= 1 else 3
+            remind_at = _default_remind_at(due_date, priority)
+            dedupe = _dedupe_key(cid, lid, text, due_date)
+
+            c.execute(
+                """
+                INSERT OR IGNORE INTO tasks
+                (id, contact_id, source_log_id, text, due_date, remind_at, status,
+                 category, priority, auto_schedule, alert_minutes_before,
+                 calendar_href, scheduled_at, dedupe_key, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    cid,
+                    lid,
+                    text,
+                    due_date,
+                    remind_at,
+                    "pending",
+                    "follow_up",
+                    priority,
+                    1,
+                    30,
+                    None,
+                    None,
+                    dedupe,
+                    now,
+                ),
+            )
+            saved_tasks.append({"text": text, "category": "follow_up"})
 
         log = enrich_log(c, c.execute("SELECT * FROM logs WHERE id=?", (lid,)).fetchone())
         return {"log": log, "ai": ai, "tasks_created": len(saved_tasks)}
-
+    
 @app.delete("/api/logs/{lid}", status_code=204)
 def delete_log(lid: str):
     with db() as c:
@@ -723,19 +801,63 @@ def preview_alerts():
     with db() as c:
         contacts = [r2d(r) for r in c.execute("SELECT * FROM contacts")]
         all_triggers = []
+
+        # 1. Add pending task reminders first
+        pending_tasks = [r2d(r) for r in c.execute("""
+            SELECT t.*, c.name as contact_name
+            FROM tasks t
+            LEFT JOIN contacts c ON c.id=t.contact_id
+            WHERE t.status='pending'
+              AND (t.remind_at IS NOT NULL OR t.due_date IS NOT NULL)
+            ORDER BY COALESCE(t.remind_at, t.due_date) ASC
+            LIMIT 50
+        """)]
+
+        for task in pending_tasks:
+            alert_date = None
+            alert_time = "09:00"
+
+            if task.get("remind_at"):
+                try:
+                    dt = dtparse.isoparse(task["remind_at"])
+                    alert_date = dt.date().isoformat()
+                    alert_time = dt.strftime("%H:%M")
+                except Exception:
+                    pass
+
+            if not alert_date and task.get("due_date"):
+                alert_date = task["due_date"]
+
+            if alert_date:
+                all_triggers.append({
+                    "type": "task",
+                    "description": task.get("text", ""),
+                    "alert_date": alert_date,
+                    "alert_time": alert_time,
+                    "event_title": f"{task.get('contact_name') or 'r.ship'} — {task.get('text', '')[:50]}",
+                    "log_snippet": task.get("text", ""),
+                    "contact_name": task.get("contact_name"),
+                    "task_id": task.get("id"),
+                })
+
+        # 2. Keep old AI relationship alert scan
         for contact in contacts:
             logs = [r2d(r) for r in c.execute(
                 "SELECT text FROM logs WHERE contact_id=? ORDER BY created_at DESC LIMIT 5",
                 (contact["id"],)
             )]
-            if not logs: continue
-            if not DATE_SIGNAL.search(" ".join(l["text"] for l in logs)): continue
+            if not logs:
+                continue
+
+            if not DATE_SIGNAL.search(" ".join(l["text"] for l in logs)):
+                continue
+
             triggers = ai_scan_alerts(contact["name"], [l["text"] for l in logs])
             for t in triggers:
                 t["contact_name"] = contact["name"]
             all_triggers.extend(triggers)
-    return {"triggers": all_triggers, "scanned": len(contacts)}
 
+    return {"triggers": all_triggers, "scanned": len(contacts)}
 @app.post("/api/alerts/schedule")
 def schedule_alerts():
     """
@@ -922,11 +1044,90 @@ def clear_agent_session(session_id: str):
         AGENT_SESSIONS.pop(session_id, None)
 
 # ── Routes: Search ─────────────────────────────────────────────────────────
+def _is_master_answer_query(question: str, intent: dict | None = None) -> bool:
+    """Questions that need a synthesized answer, not only ranked contact retrieval."""
+    q = (question or "").strip().lower()
+    if not q:
+        return False
+    return bool(re.search(
+        r"\b(gift|suggest|suggestion|recommend|recommendation|what should|what to|ideas?|pending|due|task|tasks|to[- ]?do|follow up|remind|anything left|who should i|summary|summarise|summarize|advice)\b",
+        q,
+        re.I,
+    )) or bool((intent or {}).get("is_nudge_request"))
+
+
+def _find_contacts_for_question(conn, question: str, intent: dict | None = None) -> list[dict]:
+    """Find mentioned contacts using both AI name_hint and literal contact-name matching."""
+    q = (question or "").lower()
+    contacts = [r2d(r) for r in conn.execute("SELECT * FROM contacts ORDER BY name")]
+    hits, seen = [], set()
+
+    name_hint = ((intent or {}).get("name_hint") or "").strip().lower()
+    for ct in contacts:
+        name = (ct.get("name") or "").lower()
+        if not name:
+            continue
+        parts = [p for p in re.split(r"\s+", name) if len(p) >= 3]
+        literal_hit = name in q or any(p in q for p in parts)
+        hint_hit = bool(name_hint and (name_hint in name or name in name_hint))
+        if literal_hit or hint_hit:
+            if ct["id"] not in seen:
+                hits.append(ct)
+                seen.add(ct["id"])
+    return hits
+
+
+def _load_master_context(conn, contacts: list[dict], generic_tasks: bool = False) -> tuple[list, list, list]:
+    """Return logs, tasks, names for master-answer mode."""
+    context_logs, context_tasks, names = [], [], []
+    for contact in contacts:
+        names.append(contact["name"])
+        context_logs.extend([r2d(r) for r in conn.execute(
+            "SELECT l.text, l.ai_summary, l.follow_up_prompt, l.created_at, "
+            "c.name as contact_name FROM logs l "
+            "JOIN contacts c ON c.id=l.contact_id "
+            "WHERE l.contact_id=? ORDER BY l.created_at DESC",
+            (contact["id"],),
+        )])
+        context_tasks.extend([r2d(r) for r in conn.execute(
+            "SELECT t.*, c.name as contact_name FROM tasks t "
+            "LEFT JOIN contacts c ON c.id=t.contact_id WHERE t.contact_id=? "
+            "ORDER BY t.status ASC, t.due_date ASC NULLS LAST",
+            (contact["id"],),
+        )])
+
+    if generic_tasks or not contacts:
+        context_tasks = [r2d(r) for r in conn.execute(
+            "SELECT t.*, c.name as contact_name FROM tasks t "
+            "LEFT JOIN contacts c ON c.id=t.contact_id "
+            "WHERE t.status='pending' ORDER BY t.due_date ASC NULLS LAST LIMIT 50"
+        )]
+        context_logs = [r2d(r) for r in conn.execute(
+            "SELECT l.text, l.follow_up_prompt, l.follow_up_days, l.created_at, "
+            "c.name as contact_name FROM logs l "
+            "JOIN contacts c ON c.id=l.contact_id "
+            "WHERE l.follow_up_prompt IS NOT NULL "
+            "ORDER BY l.created_at DESC LIMIT 30"
+        )]
+    return context_logs, context_tasks, names
+
+
 @app.post("/api/search")
 def search(data: SearchQ):
-    if not data.query.strip(): return {"results": [], "intent": None}
-    intent = ai_parse_intent(data.query)
-    q_emb  = embed(intent.get("enriched_query", data.query))
+    """
+    Master search:
+    - For lookup queries, returns ranked contacts as before.
+    - For recommendation / pending / advice questions, ALSO returns a synthesized answer.
+      Frontend should display `answer` above `results` when present.
+    """
+    question = data.query.strip()
+    if not question:
+        return {"mode": "empty", "answer": None, "results": [], "intent": None}
+
+    intent = ai_parse_intent(question)
+    q_emb  = embed(intent.get("enriched_query", question))
+    answer = None
+    answer_contacts = []
 
     with db() as c:
         contacts = [r2d(r) for r in c.execute("SELECT * FROM contacts")]
@@ -934,31 +1135,69 @@ def search(data: SearchQ):
             "SELECT id,contact_id,text,embedding,ai_summary,created_at FROM logs ORDER BY created_at DESC"
         )]
 
+        mentioned_contacts = _find_contacts_for_question(c, question, intent)
+        is_task_query = bool(re.search(r"\b(pending|due|task|tasks|to[- ]?do|follow up|remind|anything left)\b", question, re.I))
+        is_answer_query = _is_master_answer_query(question, intent)
+
+        if is_answer_query:
+            logs_ctx, tasks_ctx, answer_contacts = _load_master_context(
+                c,
+                mentioned_contacts,
+                generic_tasks=(is_task_query and not mentioned_contacts),
+            )
+            answer = ai_master_ask(question, logs_ctx, tasks_ctx, answer_contacts)
+
     logs_by = {}
     for log in all_logs:
         cid = log["contact_id"]
-        if len(logs_by.get(cid, [])) < 5:
+        if len(logs_by.get(cid, [])) < 8:
             logs_by.setdefault(cid, []).append(log)
 
+    mentioned_ids = {ct["id"] for ct in mentioned_contacts} if 'mentioned_contacts' in locals() else set()
     results = []
     for ct in contacts:
         best_score, best_log = 0.0, None
         for log in logs_by.get(ct["id"], []):
-            if not log.get("embedding"): continue
-            score = cosine(q_emb, json.loads(log["embedding"]))
-            if score > best_score: best_score, best_log = score, log
+            if not log.get("embedding"):
+                continue
+            try:
+                score = cosine(q_emb, json.loads(log["embedding"]))
+            except Exception:
+                continue
+            if score > best_score:
+                best_score, best_log = score, log
 
         name_hint = intent.get("name_hint") or ""
-        if name_hint and name_hint.lower() in ct["name"].lower(): best_score += 0.2
+        if name_hint and name_hint.lower() in ct["name"].lower():
+            best_score += 0.2
+        if ct["id"] in mentioned_ids:
+            best_score += 0.35
         if intent.get("is_nudge_request") and ct.get("last_log_at"):
             best_score += min(0.25, (days_ago(ct["last_log_at"]) or 0) * 0.008)
 
-        if best_score > 0.12:
+        # In answer mode with a specific person, avoid showing random low-quality matches.
+        threshold = 0.10 if answer else 0.12
+        if answer and mentioned_ids and ct["id"] not in mentioned_ids and best_score < 0.45:
+            continue
+
+        if best_score > threshold:
             results.append({"contact": ct, "score": round(best_score, 3),
                             "matched_log": best_log, "intent": intent})
 
     results.sort(key=lambda x: x["score"], reverse=True)
-    return {"results": results[:8], "intent": intent}
+    return {
+        "mode": "answer" if answer else "search",
+        "answer": answer,
+        "answer_contacts": answer_contacts,
+        "results": results[:8],
+        "intent": intent,
+    }
+
+
+@app.post("/api/master_search")
+def master_search(data: SearchQ):
+    """Explicit alias for the frontend if you want to separate Q&A from normal search later."""
+    return search(data)
 
 # ── Routes: Feed ───────────────────────────────────────────────────────────
 @app.get("/api/feed")

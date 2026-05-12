@@ -677,7 +677,7 @@ async function openAlerts() {
         </div>`;
       return;
     }
-    const icons = { explicit_date:'📅', implicit_urgency:'⚡', opportunity:'🤝', emotional:'💛' };
+    const icons = { explicit_date:'📅', implicit_urgency:'⚡', opportunity:'🤝', emotional:'💛', task:'✅' };
     $('alertContent').innerHTML = `
       <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Found ${triggers.length} alert${triggers.length===1?'':'s'} across ${scanned} contacts.</p>
       ${triggers.map(t => `
