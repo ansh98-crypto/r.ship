@@ -682,13 +682,27 @@ async function openAlerts() {
       <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Found ${triggers.length} alert${triggers.length===1?'':'s'} across ${scanned} contacts.</p>
       ${triggers.map(t => `
         <div class="alert-card">
-          <div class="alert-icon" style="background:var(--accent-bg)">${icons[t.type]||'🔔'}</div>
-          <div style="flex:1">
-            <p style="font-size:14px;font-weight:600;margin-bottom:3px">${t.event_title}</p>
-            <p style="font-size:12px;color:var(--muted);margin-bottom:4px">${t.alert_date} at ${t.alert_time}</p>
-            <p style="font-size:12px;color:var(--hint);font-style:italic">"${t.log_snippet||''}"</p>
-          </div>
-        </div>
+      ${t.task_id ? `
+        <input
+          type="checkbox"
+          class="alert-check"
+          value="${t.task_id}"
+          style="margin-top:10px"
+        >
+      ` : `
+        <div style="width:18px"></div>
+      `}
+
+      <div class="alert-icon" style="background:var(--accent-bg)">
+        ${icons[t.type] || '🔔'}
+      </div>
+
+      <div style="flex:1">
+        <p style="font-size:14px;font-weight:600;margin-bottom:3px">${t.event_title}</p>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:4px">${t.alert_date} at ${t.alert_time}</p>
+        <p style="font-size:12px;color:var(--hint);font-style:italic">"${t.log_snippet || ''}"</p>
+      </div>
+    </div>
       `).join('')}
     `;
     $('downloadIcalBtn').style.display = 'inline-flex';
@@ -717,7 +731,18 @@ async function downloadIcal() {
   btn.disabled = false;
   btn.textContent = 'Schedule in Apple Calendar';
 }
+async function deleteAlertTask(taskId) {
+  if (!confirm('Delete this reminder?')) return;
 
+  try {
+    await api(`/api/tasks/${taskId}`, { method: 'DELETE' });
+    toast('Reminder deleted');
+    openAlerts();
+  } catch (e) {
+    toast('Error deleting reminder');
+    console.error(e);
+  }
+}
 // ── SEARCH ─────────────────────────────────────────────────────────────
 async function doSearch() {
   const q = $('searchInput').value.trim(); if(!q) return;
