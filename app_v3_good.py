@@ -584,7 +584,7 @@ def add_log(cid: str, data: LogCreate):
 
         saved_tasks = []
 
-        # Auto-extract tasks from AI tasks
+        # 1. Auto-extract concrete tasks from AI
         for task_data in ai.get("tasks", []):
             if not task_data.get("text"):
                 continue
@@ -592,9 +592,15 @@ def add_log(cid: str, data: LogCreate):
             tid = str(uuid.uuid4())
             text = task_data["text"].strip()
             due_date = task_data.get("due_date")
+            category = task_data.get("category", "other")
             priority = max(1, min(4, _safe_int(task_data.get("priority"), 3)))
             remind_at = task_data.get("remind_at") or _default_remind_at(due_date, priority)
+
+            # Only concrete non-follow-up tasks can auto-schedule
             auto_schedule = _coerce_bool(task_data.get("auto_schedule"))
+            if category == "follow_up":
+                auto_schedule = 0
+
             dedupe = _dedupe_key(cid, lid, text, due_date)
 
             c.execute(
@@ -613,7 +619,7 @@ def add_log(cid: str, data: LogCreate):
                     due_date,
                     remind_at,
                     "pending",
-                    task_data.get("category", "other"),
+                    category,
                     priority,
                     auto_schedule,
                     _safe_int(task_data.get("alert_minutes_before"), 30),
@@ -625,7 +631,7 @@ def add_log(cid: str, data: LogCreate):
             )
             saved_tasks.append(task_data)
 
-        # Auto-create follow-up task when AI gives a follow-up prompt
+        # 2. Create soft follow-up task, but DO NOT auto-schedule it
         if ai.get("follow_up_prompt") and follow_days is not None:
             due_date = (datetime.now() + timedelta(days=max(int(follow_days), 0))).date().isoformat()
             text = ai.get("follow_up_prompt").strip()
@@ -651,7 +657,7 @@ def add_log(cid: str, data: LogCreate):
                     "pending",
                     "follow_up",
                     priority,
-                    1,
+                    0,
                     30,
                     None,
                     None,
@@ -661,9 +667,43 @@ def add_log(cid: str, data: LogCreate):
             )
             saved_tasks.append({"text": text, "category": "follow_up"})
 
+        # 3. Auto-schedule ONLY concrete tasks created by this log
+        auto_scheduled = []
+        new_tasks = [r2d(r) for r in c.execute(
+            """
+            SELECT t.*, contacts.name as contact_name
+            FROM tasks t
+            LEFT JOIN contacts ON contacts.id=t.contact_id
+            WHERE t.source_log_id=?
+              AND t.status='pending'
+              AND COALESCE(t.auto_schedule,0)=1
+              AND COALESCE(t.category,'') != 'follow_up'
+              AND t.calendar_href IS NULL
+              AND (t.remind_at IS NOT NULL OR t.due_date IS NOT NULL)
+            """,
+            (lid,),
+        )]
+
+        for task in new_tasks:
+            try:
+                res = _schedule_one_task(c, task)
+                auto_scheduled.append(res)
+            except Exception as e:
+                print("Auto-schedule failed:", e)
+                auto_scheduled.append({
+                    "task_id": task.get("id"),
+                    "status": "failed",
+                    "error": str(e),
+                })
+
         log = enrich_log(c, c.execute("SELECT * FROM logs WHERE id=?", (lid,)).fetchone())
-        return {"log": log, "ai": ai, "tasks_created": len(saved_tasks)}
-    
+
+        return {
+            "log": log,
+            "ai": ai,
+            "tasks_created": len(saved_tasks),
+            "auto_scheduled": auto_scheduled,
+        }  
 @app.delete("/api/logs/{lid}", status_code=204)
 def delete_log(lid: str):
     with db() as c:

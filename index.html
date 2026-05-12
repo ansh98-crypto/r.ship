@@ -311,7 +311,7 @@ mark { background:#FFF3CD; border-radius:2px; padding:0 1px; }
     <div id="alertContent" style="max-height:400px;overflow-y:auto"></div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('alertModal')">Close</button>
-      <button class="btn btn-primary" id="downloadIcalBtn" onclick="downloadIcal()" style="display:none">Download .ics for Apple Calendar</button>
+      <button class="btn btn-primary" id="downloadIcalBtn" onclick="downloadIcal()" style="display:none">Schedule in Calendar</button>
     </div>
   </div>
 </div>
@@ -694,24 +694,28 @@ async function openAlerts() {
     $('downloadIcalBtn').style.display = 'inline-flex';
   } catch(e) { $('alertContent').innerHTML = `<p style="color:var(--warn)">Error: ${e.message}</p>`; }
 }
-
 async function downloadIcal() {
-  const btn = $('downloadIcalBtn'); btn.disabled=true; btn.textContent='Generating…';
+  const btn = $('downloadIcalBtn');
+  btn.disabled = true;
+  btn.textContent = 'Scheduling…';
+
   try {
-    const r = await fetch('/api/alerts/scan', { method:'POST' });
-    if(r.headers.get('content-type')?.includes('calendar')) {
-      const blob = await r.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href=url; a.download='rship_alerts.ics'; a.click();
-      URL.revokeObjectURL(url);
-      toast('Calendar file downloaded — open to import into Apple Calendar');
-      closeModal('alertModal');
+    const data = await api('/api/alerts/schedule', { method: 'POST' });
+
+    if (data.scheduled > 0) {
+      toast(`Scheduled ${data.scheduled} alert(s) in Apple Calendar`);
     } else {
-      const data = await r.json();
-      toast(data.message || 'No alerts to download');
+      toast(data.message || 'No alerts scheduled');
     }
-  } catch(e) { toast('Error generating calendar file'); }
-  btn.disabled=false; btn.textContent='Download .ics for Apple Calendar';
+
+    closeModal('alertModal');
+  } catch (e) {
+    toast('Calendar scheduling failed. Check /api/config.');
+    console.error(e);
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Schedule in Apple Calendar';
 }
 
 // ── SEARCH ─────────────────────────────────────────────────────────────
