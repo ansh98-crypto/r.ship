@@ -244,11 +244,31 @@ Reply ONLY with valid JSON (no markdown):
 
 Theme labels: 1-3 short labels like Referrals, Career moves, Romantic, Meetups,
 College friends, Health, Travel, Business, Family.
+
 Tasks: ONLY extract clearly actionable items (e.g. "Buy birthday gift for X",
-"Follow up about Amazon referral"). Most logs won't have tasks — return [] if none.
+"Inform Eshan about class timing", "Follow up about Amazon referral").
+Most logs won't have tasks — return [] if none.
+
 Priority: 1 = urgent/important, 2 = important, 3 = normal, 4 = low.
-Set auto_schedule=true only when the task is time-sensitive and a reminder would clearly help.
-Use remind_at for the best real-life reminder time; if unsure, set null.""", 500)
+
+Set auto_schedule=true only when:
+- the task is concrete,
+- time-sensitive,
+- and has a clear due_date or remind_at.
+
+Do NOT set auto_schedule=true for soft follow-ups like "ask how it went",
+"check in", "follow up casually", or emotional nudges.
+
+IMPORTANT TIME RULES:
+- remind_at is the exact time the user should act or be reminded.
+- Do NOT subtract buffer time.
+- Do NOT schedule 15/30/60 minutes earlier.
+- If the user says "at 7:30", set remind_at to 19:30 exactly.
+- If the user says "by 7:30", set remind_at to 19:30 exactly unless they explicitly ask for earlier.
+- If the user gives multiple possible times like "7:30/8:15", choose the earliest clear action time unless the log implies otherwise.
+- If no time is specified but the task is time-sensitive, choose a reasonable real-life reminder time.
+- If unsure, set remind_at=null and auto_schedule=false.
+""", 500)
         return _parse_json(raw)
     except Exception as e:
         print(f"ai_enhance_log: {e}")
@@ -433,6 +453,7 @@ def _schedule_one_task(conn, task: dict) -> dict:
         (href, datetime.now().isoformat(), start_iso, task["id"]),
     )
     return {"status": "scheduled", "task_id": task["id"], "title": title, "href": href}
+
 
 def _pending_schedulable_tasks(conn, auto_only: bool = True) -> list[dict]:
     q = ("SELECT t.*, c.name as contact_name FROM tasks t "
