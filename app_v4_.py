@@ -268,6 +268,42 @@ IMPORTANT TIME RULES:
 - If the user gives multiple possible times like "7:30/8:15", choose the earliest clear action time unless the log implies otherwise.
 - If no time is specified but the task is time-sensitive, choose a reasonable real-life reminder time.
 - If unsure, set remind_at=null and auto_schedule=false.
+
+
+CRITICAL TASK DETECTION RULES:
+
+If the user expresses:
+- obligation
+- intent
+- planned future action
+- responsibility
+- pending conversation
+- reminder-like phrasing
+
+then ALWAYS create a task.
+
+Strong trigger phrases include:
+- have to
+- need to
+- should
+- must
+- remind me
+- don't forget
+- need to talk
+- have to call
+- need to send
+- follow up
+- push resume
+- message X
+- talk to her/him
+
+These MUST become actionable scheduled tasks,
+NOT reflective follow-up prompts.
+
+For these cases:
+- tasks[] should be populated
+- auto_schedule=true
+- follow_up_prompt should be null
 """, 500)
         return _parse_json(raw)
     except Exception as e:
