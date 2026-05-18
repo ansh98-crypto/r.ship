@@ -194,39 +194,6 @@ mark { background:#FFF3CD; border-radius:2px; padding:0 1px; }
 
 ::-webkit-scrollbar { width:4px; }
 ::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
-
-/* ── Tasks ── */
-.task-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:12px 14px; margin-bottom:6px; display:flex; gap:10px; align-items:flex-start; position:relative; transition:box-shadow .1s; }
-.task-card:hover { box-shadow:0 2px 6px rgba(0,0,0,.05); }
-.task-card.done { opacity:.5; }
-.task-check { width:16px; height:16px; border-radius:4px; border:2px solid var(--border); background:transparent; cursor:pointer; flex-shrink:0; margin-top:2px; appearance:none; -webkit-appearance:none; transition:all .15s; }
-.task-check:checked { background:var(--ok); border-color:var(--ok); }
-.task-check:checked::after { content:'✓'; display:block; color:#fff; font-size:10px; text-align:center; line-height:12px; }
-.pri-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; margin-top:5px; }
-.pri-1 { background:#E53E3E; }
-.pri-2 { background:#ED8936; }
-.pri-3 { background:#CBD5E0; }
-.pri-4 { background:#E2E8F0; }
-.task-text { font-size:13.5px; color:var(--text); line-height:1.5; flex:1; }
-.task-text.done-text { text-decoration:line-through; color:var(--muted); }
-.task-meta { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
-.cal-badge { display:inline-flex; align-items:center; gap:3px; font-size:10px; font-weight:500; padding:2px 7px; border-radius:10px; background:var(--ok-bg); color:var(--ok); }
-.task-del { position:absolute; top:8px; right:8px; background:none; border:none; color:var(--hint); cursor:pointer; font-size:15px; padding:2px 5px; opacity:0; transition:opacity .1s; }
-.task-card:hover .task-del { opacity:1; }
-.task-filters { display:flex; gap:6px; margin-bottom:16px; }
-.filter-btn { padding:5px 12px; border-radius:20px; border:1px solid var(--border); background:transparent; font-size:12px; font-family:inherit; cursor:pointer; color:var(--muted); transition:all .1s; }
-.filter-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
-
-/* ── Agent chat ── */
-.agent-bubble { max-width:80%; padding:10px 14px; border-radius:12px; font-size:13.5px; line-height:1.55; margin-bottom:12px; }
-.agent-bubble.user { background:var(--accent); color:#fff; border-radius:12px 12px 4px 12px; margin-left:auto; }
-.agent-bubble.bot  { background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:12px 12px 12px 4px; }
-.agent-bubble.bot.thinking { color:var(--hint); font-style:italic; }
-.agent-time { font-size:10px; color:var(--hint); margin-bottom:2px; }
-.agent-row { display:flex; flex-direction:column; margin-bottom:4px; }
-.agent-row.user-row { align-items:flex-end; }
-.agent-row.bot-row  { align-items:flex-start; }
-.agent-actions { display:flex; align-items:center; gap:6px; margin-top:4px; font-size:11px; color:var(--hint); }
 </style>
 </head>
 <body>
@@ -250,15 +217,6 @@ mark { background:#FFF3CD; border-radius:2px; padding:0 1px; }
     <button class="nav-btn" data-view="search" onclick="nav('search','Search')">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20L16.5 16.5"/></svg>
       Search
-    </button>
-    <button class="nav-btn" data-view="tasks" onclick="nav('tasks','Tasks')">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-      Tasks
-      <span id="tasksBadge" style="display:none;margin-left:auto;font-size:10px;font-weight:600;background:var(--warn-bg);color:var(--warn);padding:1px 6px;border-radius:10px"></span>
-    </button>
-    <button class="nav-btn" data-view="agent" onclick="nav('agent','Agent')">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0112 0v2"/><path d="M12 12v4"/></svg>
-      Agent
     </button>
   </div>
 
@@ -306,31 +264,6 @@ mark { background:#FFF3CD; border-radius:2px; padding:0 1px; }
     <!-- CONTACT -->
     <div id="view-contact" class="view">
       <div id="contactContent"></div>
-    </div>
-
-    <!-- TASKS -->
-    <div id="view-tasks" class="view">
-      <div id="tasksContent"></div>
-    </div>
-
-    <!-- AGENT -->
-    <div id="view-agent" class="view">
-      <div id="agentContent" style="display:flex;flex-direction:column;height:calc(100vh - 120px)">
-        <div id="agentLog" style="flex:1;overflow-y:auto;padding-bottom:16px"></div>
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;flex-shrink:0">
-          <div style="display:flex;gap:8px;align-items:flex-end">
-            <textarea id="agentInput" placeholder='Try "Schedule a catch-up with Rahul next Tuesday" or "What is on my calendar tomorrow?" or "Anything pending for Priya?"'
-              style="flex:1;min-height:44px;max-height:120px;resize:none;padding:8px 10px;font-size:13px"
-              onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAgent()}"></textarea>
-            <button class="btn btn-primary btn-sm" onclick="sendAgent()" id="agentSendBtn">Send</button>
-          </div>
-          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-            <button class="btn btn-sm" style="font-size:11px" onclick="$('agentInput').value='What is on my calendar today?'">📅 Today\'s calendar</button>
-            <button class="btn btn-sm" style="font-size:11px" onclick="$('agentInput').value='What is pending?'">📋 What\'s pending</button>
-            <button class="btn btn-sm" style="font-size:11px" onclick="clearAgent()">🗑 Clear session</button>
-          </div>
-        </div>
-      </div>
     </div>
 
   </div>
@@ -422,8 +355,6 @@ function nav(view, title) {
   document.querySelectorAll('.c-item').forEach(el=>el.classList.remove('active'));
   if(view==='today')  loadFeed();
   if(view==='themes') loadThemes();
-  if(view==='tasks')  loadTasks();
-  if(view==='agent')  initAgent();
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────────
@@ -553,7 +484,7 @@ async function openContact(cid) {
     <div class="stat-row">
       <div class="stat-pill"><div class="sv">${relTime(c.last_log_at)}</div><div class="sl">Last log</div></div>
       <div class="stat-pill"><div class="sv">${data.logs.length}</div><div class="sl">Logs</div></div>
-      <div class="stat-pill"><div class="sv">${data.tasks?.filter(t=>t.status==='pending').length||0}</div><div class="sl">Tasks</div></div>
+      <div class="stat-pill"><div class="sv">${c.themes?.length||0}</div><div class="sl">Themes</div></div>
     </div>
 
     ${c.themes?.length ? `
@@ -581,13 +512,6 @@ async function openContact(cid) {
       ${!data.logs.length?'<div class="empty">No logs yet. Add the first one above.</div>':''}
       ${data.logs.map(l=>renderLog(l)).join('')}
     </div>
-
-    ${data.tasks?.length ? `
-      <p class="sl-hdr" style="margin-top:24px">${data.tasks.filter(t=>t.status==='pending').length} pending task${data.tasks.filter(t=>t.status==='pending').length===1?'':'s'}</p>
-      <div id="contactTaskList">
-        ${data.tasks.map(t=>renderContactTask(t)).join('')}
-      </div>` : ''
-    }
   `;
 
   $('logTxt').addEventListener('input', () => { $('saveBtn').disabled = !$('logTxt').value.trim(); });
@@ -682,15 +606,8 @@ async function saveLog(cid) {
     const list = $('logList');
     const empty = list.querySelector('.empty'); if(empty) empty.remove();
     list.insertAdjacentHTML('afterbegin', renderLog(resp.log));
-    // v4: surface auto-scheduled calendar events
-    const scheduled = resp.auto_scheduled?.filter(r=>r.status==='scheduled') || [];
-    if(scheduled.length) {
-      toast(`Log saved ✓  ·  ${scheduled.length} calendar event${scheduled.length>1?'s':''} created`, 3500);
-    } else {
-      toast(`Log saved ✓${resp.tasks_created>0 ? ` · ${resp.tasks_created} task${resp.tasks_created>1?'s':''} extracted` : ''}`);
-    }
+    toast('Log saved ✓');
     loadSidebar();
-    updateTasksBadge();
   } catch(e) { toast('Error saving log'); btn.disabled=false; btn.textContent='Save log'; }
 }
 
@@ -937,198 +854,8 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// ── CONTACT TASK (inline in contact detail) ────────────────────────────
-function renderContactTask(t) {
-  const catColors = {gift:'#B06AB3',call:'#2EC4B6',follow_up:'#F4A261',life_admin:'#5B7FE8',referral:'#52B788',other:'#8A8880'};
-  const priClass = ['','pri-1','pri-2','pri-3','pri-4'][t.priority||3] || 'pri-3';
-  const isDone = t.status==='done';
-  return `
-    <div class="task-card${isDone?' done':''}">
-      <input type="checkbox" class="task-check" ${isDone?'checked':''} onchange="toggleTaskDone('${t.id}',this.checked,'contact')">
-      <div class="pri-dot ${priClass}"></div>
-      <div style="flex:1;min-width:0">
-        <div class="task-text${isDone?' done-text':''}">${escapeHtml(t.text)}</div>
-        <div class="task-meta">
-          ${t.category&&t.category!=='other'?`<span class="badge" style="background:${catColors[t.category]||'#8A8880'}18;color:${catColors[t.category]||'#8A8880'}">${t.category.replace('_',' ')}</span>`:''}
-          ${t.due_date?`<span class="badge" style="background:var(--warn-bg);color:var(--warn)">📅 ${t.due_date}</span>`:''}
-          ${t.calendar_href?`<span class="cal-badge">✓ In calendar</span>`:''}
-        </div>
-      </div>
-      <button class="task-del" onclick="deleteTaskFromContact('${t.id}')">×</button>
-    </div>`;
-}
-
-async function toggleTaskDone(tid, isDone, ctx='tasks') {
-  await api(`/api/tasks/${tid}`, {method:'PATCH', body:JSON.stringify({status:isDone?'done':'pending'})});
-  if(ctx==='contact') openContact(currentContactId);
-  else { loadTasks(); updateTasksBadge(); }
-}
-
-async function deleteTaskFromContact(tid) {
-  if(!confirm('Delete this task?')) return;
-  await api(`/api/tasks/${tid}`, {method:'DELETE'});
-  toast('Task deleted');
-  openContact(currentContactId);
-  updateTasksBadge();
-}
-
-// ── TASKS VIEW ──────────────────────────────────────────────────────────
-let taskFilter = 'pending';
-
-async function loadTasks() {
-  $('topActions').innerHTML = `<button class="btn btn-sm btn-primary" onclick="scheduleAllPending()">📅 Schedule all pending</button>`;
-  $('tasksContent').innerHTML = '<p style="color:var(--hint);font-size:13px">Loading…</p>';
-  try {
-    const params = taskFilter && taskFilter !== 'all' ? `?status=${taskFilter}` : '';
-    const tasks = await api(`/api/tasks${params}`);
-    updateTasksBadge(tasks);
-    if(!tasks.length) {
-      $('tasksContent').innerHTML = `
-        <div class="task-filters">${renderFilterBtns()}</div>
-        <div class="empty">No ${taskFilter!=='all'?taskFilter:''} tasks.</div>`;
-      return;
-    }
-    $('tasksContent').innerHTML = `
-      <div class="task-filters">${renderFilterBtns()}</div>
-      ${tasks.map(t => renderTask(t)).join('')}`;
-  } catch(e) { $('tasksContent').innerHTML=`<p style="color:var(--warn)">Error: ${e.message}</p>`; }
-}
-
-function renderFilterBtns() {
-  return ['all','pending','done'].map(f =>
-    `<button class="filter-btn${taskFilter===f?' active':''}" onclick="setTaskFilter('${f}')">${f.charAt(0).toUpperCase()+f.slice(1)}</button>`
-  ).join('');
-}
-
-function setTaskFilter(f) { taskFilter=f; loadTasks(); }
-
-async function updateTasksBadge(tasks) {
-  try {
-    const t = tasks || await api('/api/tasks?status=pending');
-    const badge = $('tasksBadge');
-    if(!badge) return;
-    if(t.length) { badge.textContent=t.length; badge.style.display='inline'; }
-    else { badge.style.display='none'; }
-  } catch {}
-}
-
-function renderTask(t) {
-  const catColors = {gift:'#B06AB3',call:'#2EC4B6',follow_up:'#F4A261',life_admin:'#5B7FE8',referral:'#52B788',other:'#8A8880'};
-  const priClass = ['','pri-1','pri-2','pri-3','pri-4'][t.priority||3] || 'pri-3';
-  const isDone = t.status==='done';
-  return `
-    <div class="task-card${isDone?' done':''}" id="task-${t.id}">
-      <input type="checkbox" class="task-check" ${isDone?'checked':''} onchange="toggleTaskDone('${t.id}',this.checked)">
-      <div class="pri-dot ${priClass}"></div>
-      <div style="flex:1;min-width:0">
-        <div class="task-text${isDone?' done-text':''}">${escapeHtml(t.text)}</div>
-        <div class="task-meta">
-          ${t.contact_name?`<span class="badge badge-accent" style="cursor:pointer" onclick="openContact('${t.contact_id}')">${escapeHtml(t.contact_name)}</span>`:''}
-          ${t.category&&t.category!=='other'?`<span class="badge" style="background:${catColors[t.category]||'#8A8880'}18;color:${catColors[t.category]||'#8A8880'}">${t.category.replace('_',' ')}</span>`:''}
-          ${t.due_date?`<span class="badge" style="background:var(--warn-bg);color:var(--warn)">📅 ${t.due_date}</span>`:''}
-          ${t.remind_at?`<span class="badge" style="background:var(--bg);color:var(--muted)">⏰ ${fmtRemindAt(t.remind_at)}</span>`:''}
-          ${t.calendar_href?`<span class="cal-badge">✓ In calendar</span>`:
-            t.due_date||t.remind_at?`<button class="btn btn-sm" style="font-size:10px;padding:2px 8px" onclick="scheduleTask('${t.id}')">+ Calendar</button>`:''}
-        </div>
-      </div>
-      <button class="task-del" onclick="deleteTask('${t.id}')">×</button>
-    </div>`;
-}
-
-function fmtRemindAt(iso) {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString('en-IN',{day:'numeric',month:'short'}) + ' ' + d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
-  } catch { return iso; }
-}
-
-async function deleteTask(tid) {
-  if(!confirm('Delete task? This also removes any linked calendar event.')) return;
-  await api(`/api/tasks/${tid}`, {method:'DELETE'});
-  const el = $(`task-${tid}`); if(el) el.remove();
-  toast('Task deleted');
-  updateTasksBadge();
-}
-
-async function scheduleTask(tid) {
-  try {
-    const resp = await api('/api/tasks/schedule_pending?auto_only=false', {method:'POST'});
-    const ev = (resp.events||[]).find(e=>e.task_id===tid);
-    if(ev?.status==='scheduled') { toast('Scheduled in Apple Calendar ✓'); loadTasks(); }
-    else toast('Could not schedule — check calendar connection');
-  } catch(e) { toast('Schedule failed: '+e.message); }
-}
-
-async function scheduleAllPending() {
-  const btn = $('topActions').querySelector('button');
-  if(btn) { btn.disabled=true; btn.textContent='Scheduling…'; }
-  try {
-    const resp = await api('/api/tasks/schedule_pending?auto_only=false', {method:'POST'});
-    toast(`Scheduled ${resp.scheduled} task${resp.scheduled===1?'':'s'} in Apple Calendar`);
-    loadTasks();
-  } catch(e) { toast('Error: '+e.message); }
-  if(btn) { btn.disabled=false; btn.textContent='📅 Schedule all pending'; }
-}
-
-// ── AGENT ───────────────────────────────────────────────────────────────
-const AGENT_SESSION = 'rship-' + Math.random().toString(36).slice(2,10);
-let agentHistory = [];
-
-function initAgent() {
-  $('topActions').innerHTML = '';
-  if(!agentHistory.length) {
-    $('agentLog').innerHTML = `
-      <div style="text-align:center;padding:32px 20px;color:var(--hint)">
-        <div style="font-size:28px;margin-bottom:12px">🤝</div>
-        <p style="font-size:14px;margin-bottom:6px;font-weight:500;color:var(--muted)">r.ship Agent</p>
-        <p style="font-size:13px;line-height:1.6">Reads your relationship logs and manages your Apple Calendar.<br>Ask it to schedule, look up, or take action.</p>
-      </div>`;
-  }
-}
-
-async function sendAgent() {
-  const msg = $('agentInput').value.trim(); if(!msg) return;
-  $('agentInput').value='';
-  appendAgentMsg(msg,'user');
-  const thinking = appendAgentMsg('Thinking…','bot thinking');
-  $('agentSendBtn').disabled=true;
-  try {
-    const resp = await api('/api/agent', {method:'POST', body:JSON.stringify({message:msg, session_id:AGENT_SESSION})});
-    thinking.remove();
-    appendAgentMsg(resp.response,'bot', resp.actions_taken);
-  } catch(e) {
-    thinking.remove();
-    appendAgentMsg('Error: '+e.message,'bot');
-  }
-  $('agentSendBtn').disabled=false;
-}
-
-function appendAgentMsg(text, role, actions=0) {
-  const log = $('agentLog');
-  const isUser = role==='user';
-  const isThinking = role==='bot thinking';
-  const row = document.createElement('div');
-  row.className = `agent-row ${isUser?'user-row':'bot-row'}`;
-  row.innerHTML = `
-    <div class="agent-time">${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
-    <div class="agent-bubble ${isUser?'user':isThinking?'bot thinking':'bot'}">${escapeHtml(text).replace(/\n/g,'<br>')}</div>
-    ${!isUser&&!isThinking&&actions>0?`<div class="agent-actions">⚡ ${actions} action${actions===1?'':'s'} taken</div>`:''}`;
-  log.appendChild(row);
-  log.scrollTop=log.scrollHeight;
-  return row;
-}
-
-async function clearAgent() {
-  if(!confirm('Clear conversation history?')) return;
-  try { await api(`/api/agent/session/${AGENT_SESSION}`, {method:'DELETE'}); } catch {}
-  agentHistory=[];
-  $('agentLog').innerHTML='';
-  initAgent();
-  toast('Session cleared');
-}
-
 // ── BOOT ───────────────────────────────────────────────────────────────
-(async()=>{ await loadSidebar(); loadFeed(); updateTasksBadge(); })();
+(async()=>{ await loadSidebar(); loadFeed(); })();
 </script>
 </body>
 </html>

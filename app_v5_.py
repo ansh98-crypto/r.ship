@@ -163,9 +163,21 @@ def embed(text: str) -> list:
 def cosine(a, b) -> float:
     return float(np.dot(np.array(a), np.array(b)))
 def days_ago(iso: str | None) -> int | None:
-    if not iso: return None
-    return (datetime.now() - datetime.fromisoformat(iso)).days
+    if not iso:
+        return None
 
+    try:
+        dt = datetime.fromisoformat(iso)
+
+        if dt.tzinfo is not None:
+            now = datetime.now(dt.tzinfo)
+        else:
+            now = datetime.now()
+
+        return (now - dt).days
+
+    except Exception:
+        return None
 def get_or_create_theme(conn, name: str) -> str:
     row = conn.execute("SELECT id FROM themes WHERE LOWER(name)=LOWER(?)", (name,)).fetchone()
     if row: return row["id"]
