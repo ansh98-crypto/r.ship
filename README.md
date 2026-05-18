@@ -1,122 +1,90 @@
-# r.ship v2 — Relationship Logbook
+# 🚀 r.ship — AI-Powered Relationship & Scheduling Intelligence
 
-> "Ctrl+F for your relationships."
+r.ship is an intelligent relationship management and outreach orchestration platform built to automate how people manage conversations, follow-ups, reminders, and scheduling across personal and professional contexts.
 
-## Stack
-
-| Layer | Technology | Notes |
-|---|---|---|
-| Backend | FastAPI + SQLite | Single file, no ORM |
-| Embeddings | all-MiniLM-L6-v2 | Local, zero API cost |
-| AI — log enhancement | Claude Haiku | Key fact + follow-up + theme suggestion |
-| AI — alert scan | Claude Haiku | Detects time-sensitive signals in last 5 logs |
-| AI — search intent | Claude Haiku | Rewrites query for semantic matching |
-| STT — voice logging | OpenAI Whisper API | **Will migrate to WisprFlow when available** |
-| Calendar alerts | icalendar (Python) | Generates .ics for Apple Calendar import |
-| Frontend | Vanilla JS + HTML | No build step, no framework |
+Designed as a lightweight “digital relationship operating system,” r.ship combines AI-driven context understanding with workflow automation to reduce coordination overhead and ensure important relationships never slip through the cracks.
 
 ---
 
-## Setup
+## ✨ Core Features
 
-```bash
-# 1. Create virtual environment
-python -m venv venv
-source venv/bin/activate       # Mac/Linux
-# venv\Scripts\activate        # Windows
+* 🧠 **AI Relationship Intelligence**
 
-# 2. Install dependencies
-pip install -r requirements.txt
-# Note: first run downloads all-MiniLM-L6-v2 (~90MB, one-time)
+  * Extracts intent, commitments, reminders, and emotional context from conversations
+  * Detects actionable follow-ups automatically
 
-# 3. Set API keys
-export ANTHROPIC_API_KEY=sk-ant-...
-export OPENAI_API_KEY=sk-...        # For Whisper STT
+* 📅 **Smart Scheduling Agent**
 
-# 4. Run
-uvicorn app:app --reload --port 8000
-```
+  * Converts natural conversations into calendar events
+  * Handles reminders, follow-ups, and meeting coordination
 
-Open http://localhost:8000
+* 🔔 **Context-Aware Alerts**
 
----
+  * Tracks unresolved commitments
+  * Surfaces timely reminders from prior interactions
 
-## Features
+* 👥 **Relationship Memory Layer**
 
-### Today (home)
-- Feed of recent logs across all contacts
-- **Scan for Alerts** button — runs AI scan and shows preview before download
+  * Maintains lightweight contextual memory across contacts
+  * Helps personalize future interactions
 
-### Themes
-- Auto-generated from log content by Claude Haiku on every save
-- Manual add/remove via "+ theme" button on any log
-- **Theme grid view**: all themes as coloured cards with people count
-- **Theme detail view**: people in that theme + AI summary of their context
-- Tap a theme chip on a contact to jump to theme detail
+* ⚡ **Workflow Automation**
 
-### Contact detail
-- Freeform name (person, context, or group — e.g. "Met at Goa Concert")
-- **Type** a log in the textarea
-- **Voice** — click mic, speak, Whisper transcribes, review then save
-- Each saved log shows: AI-extracted key fact, follow-up reminder, theme chips
-- Theme chips are clickable (jump to theme view) and removable
-
-### Proactive Alerts → iCal
-Pipeline:
-1. Pre-filter contacts using regex (date/urgency keywords) — avoids AI calls on irrelevant contacts
-2. For filtered contacts: send last 5 logs to Claude Haiku
-3. Haiku returns structured triggers with AI-decided timing
-4. Preview shown in-app
-5. Download `.ics` → open in Finder → auto-imports to Apple Calendar
-
-Trigger types: explicit dates, implicit urgency, opportunities, emotional moments
-
-### Semantic Search (/ shortcut)
-1. Claude Haiku parses intent and rewrites query (e.g. "ISB alum Goa" → verbose semantic form)
-2. Local embedding (all-MiniLM-L6-v2) on enriched query
-3. Compare against last 5 logs per contact via cosine similarity
-4. Boosts: name hints, overdue contacts on nudge queries
-5. Top 8 results with match % and highlighted snippets
+  * Automates repetitive coordination tasks
+  * Reduces manual tracking and reminder fatigue
 
 ---
 
-## WisprFlow Migration (future)
+## 🛠 Tech Stack
 
-When WisprFlow API is available, replace only `_transcribe()` in `app.py`:
-
-```python
-# Current (Whisper)
-def _transcribe(audio_bytes, mime):
-    # ... openai whisper call ...
-
-# Future (WisprFlow — drop-in replacement)
-def _transcribe(audio_bytes, mime):
-    # ... wisprflow api call ...
-    # Endpoint, response format, and everything else stays the same
-```
-
-No frontend changes needed.
+* **Frontend:** HTML, CSS, JavaScript
+* **Backend:** Python
+* **AI Layer:** OpenAI APIs / LLM orchestration
+* **Automation:** Calendar + reminder workflows
+* **Architecture:** Event-driven interaction pipeline
 
 ---
 
-## API Cost Estimate
+## 🎯 Vision
 
-| Operation | Model | Cost/call | Daily estimate |
-|---|---|---|---|
-| Log save (enhance + theme) | Haiku | ~$0.00005 | ~$0.001 (20 logs) |
-| Alert scan (per filtered contact) | Haiku | ~$0.0001 | ~$0.001 (10 contacts) |
-| Search intent parse | Haiku | ~$0.00003 | ~$0.0003 (10 searches) |
-| Voice transcription | Whisper | $0.006/min | ~$0.003 (30s avg) |
-| **Total daily** | | | **< ₹1/day** |
+Most productivity tools manage *tasks*.
+r.ship is built to manage *relationships*.
+
+The goal is to create an AI layer that acts less like a CRM and more like a thoughtful personal chief-of-staff — helping users maintain stronger professional and personal relationships without cognitive overload.
 
 ---
 
-## File structure
-```
-rship_v2/
-├── app.py        # FastAPI backend — all routes, AI calls, iCal generation
-├── index.html    # Single-page frontend
-├── requirements.txt
-├── README.md
-└── rship.db      # SQLite (auto-created on first run)
-```
+## 📌 Example Use Cases
+
+* Automatically reminding you to follow up after an important conversation
+* Converting chats into actionable calendar events
+* Tracking pending commitments across contacts
+* Managing personal and professional relationships in one system
+* Reducing missed follow-ups and scheduling friction
+
+---
+
+## 🚧 Current Status
+
+Actively evolving with ongoing work around:
+
+* Multi-agent workflows
+* Calendar intelligence
+* Personalized memory systems
+* Context-aware notifications
+* Relationship analytics
+
+---
+
+## 🤝 Philosophy
+
+> Relationships compound.
+> Most tools optimize transactions.
+> r.ship optimizes continuity.
+
+---
+
+## 📬 Contact
+
+Built by Ansh Tangri
+For collaborations, ideas, or feedback — feel free to connect.
